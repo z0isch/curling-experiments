@@ -1,5 +1,5 @@
 [package]
-name = "curling-experiments"
+name = "curling_experiments"
 version = "0.1.0"
 edition = "2024"
 
