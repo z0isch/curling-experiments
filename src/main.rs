@@ -1,3 +1,5 @@
+mod intersection;
+
 use bevy::prelude::*;
 use bevy::window::WindowResolution;
 use bevy_rand::{
@@ -65,6 +67,10 @@ fn main() {
         ))
         .insert_resource(config)
         .add_systems(Startup, setup)
+        .add_systems(
+            FixedUpdate,
+            (update_stone_position, apply_tile_velocity_effects).chain(),
+        )
         .add_systems(Update, toggle_tile_coordinates)
         .add_systems(Update, track_mouse_tile)
         .add_systems(Update, draw_stone)
@@ -214,7 +220,8 @@ impl Facing {
 
 #[derive(Component, Clone)]
 struct Stone {
-    pos: HexCoordinate,
+    pos: Vec2,
+    velocity: Vec2,
     facing: Facing,
     speed: i32,
 }
@@ -325,7 +332,8 @@ fn setup(
 
     commands.spawn((
         Stone {
-            pos: stone_hex_coord,
+            pos: stone_world_pos,
+            velocity: Vec2::new(50.0, 0.0),
             facing,
             speed: 100,
         },
@@ -519,7 +527,7 @@ fn click_tile(
     if let Some(hex_coord) = world_to_hex(world_pos, &config)
         && mouse.just_pressed(MouseButton::Left)
     {
-        stone.pos = hex_coord;
+        stone.pos = hex_to_world(&hex_coord, &config);
     }
 }
 
@@ -541,13 +549,118 @@ fn toggle_tile_coordinates(
     }
 }
 
+const STONE_RADIUS: f32 = 10.0;
+
+fn update_stone_position(mut stone: Single<&mut Stone>, time: Res<Time>) {
+    let delta = stone.velocity * time.delta_secs();
+    stone.pos += delta;
+}
+
+/// System that modifies stone velocity based on tile types it overlaps with.
+/// Uses circle_hexagon_overlap_ratio as a multiplicative factor for the effect strength.
+fn apply_tile_velocity_effects(
+    mut stone: Single<&mut Stone>,
+    tiles: Query<&Tile>,
+    config: Res<HexGridConfig>,
+) {
+    const SAMPLES: u32 = 100;
+    stone.velocity =
+        compute_tile_effects(stone.pos, stone.velocity, tiles.iter(), &config, SAMPLES);
+}
+
+/// Drag coefficient - how much velocity is reduced per frame at full overlap
+const DRAG_COEFFICIENT: f32 = 0.002;
+
+/// Computes the new velocity after applying all tile effects at the given position.
+/// This is the core physics logic shared by both real-time simulation and trajectory prediction.
+fn compute_tile_effects<'a>(
+    pos: Vec2,
+    mut velocity: Vec2,
+    tiles: impl Iterator<Item = &'a Tile>,
+    config: &HexGridConfig,
+    samples: u32,
+) -> Vec2 {
+    let mut rotation_angle = 0.0_f32;
+    let mut total_drag = 0.0_f32;
+
+    for tile in tiles {
+        let tile_world_pos = hex_to_world(&tile.hex_coord, config);
+        let overlap_ratio = intersection::circle_hexagon_overlap_ratio(
+            pos,
+            STONE_RADIUS,
+            tile_world_pos,
+            config.hex_radius,
+            samples,
+        );
+
+        if overlap_ratio <= 0.0 {
+            continue;
+        }
+
+        match tile.tile_type {
+            TileType::Wall => {
+                // Immediately reflect velocity off the wall
+                let to_wall = tile_world_pos - pos;
+                if to_wall.length_squared() > 0.0 {
+                    let wall_normal = -to_wall.normalize();
+                    // Reflect: v' = v - 2(v·n)n
+                    let dot = velocity.dot(wall_normal);
+                    if dot < 0.0 {
+                        // Only reflect if moving toward the wall
+                        velocity -= 2.0 * dot * wall_normal;
+                    }
+                }
+                // No drag on walls
+            }
+            TileType::MaintainSpeed => {
+                // No effect on velocity, no drag
+            }
+            TileType::SlowDown => {
+                // Apply drag proportional to overlap
+                total_drag += DRAG_COEFFICIENT * overlap_ratio;
+            }
+            TileType::TurnCounterclockwise => {
+                // Rotate velocity counterclockwise, scaled by overlap
+                // ~1 degree per frame at full overlap
+                rotation_angle += 0.017 * overlap_ratio;
+                // Apply drag proportional to overlap
+                total_drag += DRAG_COEFFICIENT * overlap_ratio;
+            }
+            TileType::TurnClockwise => {
+                // Rotate velocity clockwise, scaled by overlap
+                rotation_angle -= 0.017 * overlap_ratio;
+                // Apply drag proportional to overlap
+                total_drag += DRAG_COEFFICIENT * overlap_ratio;
+            }
+        }
+    }
+
+    // Apply accumulated rotation to velocity vector
+    if rotation_angle.abs() > 0.0001 {
+        let cos_angle = rotation_angle.cos();
+        let sin_angle = rotation_angle.sin();
+        velocity = Vec2::new(
+            velocity.x * cos_angle - velocity.y * sin_angle,
+            velocity.x * sin_angle + velocity.y * cos_angle,
+        );
+    }
+
+    // Apply accumulated drag - reduces velocity magnitude while preserving direction
+    if total_drag > 0.0 {
+        // Clamp drag factor to prevent velocity reversal
+        let drag_factor = (1.0 - total_drag).max(0.0);
+        velocity *= drag_factor;
+    }
+
+    velocity
+}
+
 fn draw_stone(
     mut stone: Single<(&Stone, &mut Transform, &Children)>,
     mut arrow_query: Query<&mut Transform, (With<StoneArrow>, Without<Stone>)>,
-    config: Res<HexGridConfig>,
 ) {
     let (stone_data, ref mut stone_transform, children) = *stone;
-    stone_transform.translation = hex_to_world(&stone_data.pos, &config).extend(3.);
+    stone_transform.translation = stone_data.pos.extend(3.);
 
     let facing_angle = stone_data.facing.to_angle();
     for child in children.iter() {
@@ -561,16 +674,17 @@ fn move_stone_on_space(
     input: Res<ButtonInput<KeyCode>>,
     mut stone: Single<&mut Stone>,
     tiles: Query<&Tile>,
+    config: Res<HexGridConfig>,
 ) {
     if input.just_pressed(KeyCode::Space) {
-        let next_stone = move_stone(stone.as_ref(), tiles);
+        let next_stone = move_stone(stone.as_ref(), tiles, &config);
         stone.facing = next_stone.facing;
         stone.pos = next_stone.pos;
         stone.speed = next_stone.speed;
     }
 }
 
-fn move_stone(stone: &Stone, tiles: Query<&Tile>) -> Stone {
+fn move_stone(stone: &Stone, tiles: Query<&Tile>, config: &HexGridConfig) -> Stone {
     let mut next_stone = stone.clone();
 
     if stone.speed <= 0 {
@@ -578,11 +692,14 @@ fn move_stone(stone: &Stone, tiles: Query<&Tile>) -> Stone {
     }
 
     //Find the tile at the stone's position
-    let Some(current_tile) = tiles.iter().find(|tile| tile.hex_coord == stone.pos) else {
-        log::error!("Tile not found for stone at position: {:?}", stone.pos);
+    let Some(stone_hex) = world_to_hex(stone.pos, config) else {
+        log::error!("No hex found for stone at world position: {:?}", stone.pos);
         return next_stone;
     };
-    log::info!("Current tile: {:?}", current_tile);
+    let Some(current_tile) = tiles.iter().find(|tile| tile.hex_coord == stone_hex) else {
+        log::error!("Tile not found for stone at position: {:?}", stone_hex);
+        return next_stone;
+    };
 
     let facing_direction = match current_tile.tile_type {
         TileType::Wall => stone.facing,
@@ -609,8 +726,6 @@ fn move_stone(stone: &Stone, tiles: Query<&Tile>) -> Stone {
         return next_stone;
     };
 
-    log::info!("Next tile: {:?}", next_tile);
-
     next_stone.speed = match current_tile.tile_type {
         TileType::Wall => stone.speed,
         TileType::MaintainSpeed => stone.speed,
@@ -629,18 +744,18 @@ fn move_stone(stone: &Stone, tiles: Query<&Tile>) -> Stone {
             next_stone.speed -= 1;
         }
         TileType::MaintainSpeed => {
-            next_stone.pos = next_tile_coord;
+            next_stone.pos = hex_to_world(&next_tile_coord, config);
         }
         TileType::SlowDown => {
-            next_stone.pos = next_tile_coord;
+            next_stone.pos = hex_to_world(&next_tile_coord, config);
             next_stone.speed -= 1;
         }
         TileType::TurnCounterclockwise => {
-            next_stone.pos = next_tile_coord;
+            next_stone.pos = hex_to_world(&next_tile_coord, config);
             next_stone.speed -= 1;
         }
         TileType::TurnClockwise => {
-            next_stone.pos = next_tile_coord;
+            next_stone.pos = hex_to_world(&next_tile_coord, config);
             next_stone.speed -= 1;
         }
     }
@@ -656,37 +771,58 @@ fn draw_move_line(
     tiles: Query<&Tile>,
     lines: Query<Entity, With<StoneMoveLine>>,
 ) {
-    let stones = make_all_moves(*stone, tiles);
-    for l in lines {
+    for l in &lines {
         commands.entity(l).despawn();
     }
-    for (start, end) in stones.iter().zip(stones.iter().skip(1)) {
-        let start_stone_world_pos = hex_to_world(&start.pos, &config);
-        let end_stone_world_pos = hex_to_world(&end.pos, &config);
+
+    // Simulate physics forward to predict trajectory
+    let trajectory = simulate_trajectory(*stone, &tiles, &config);
+
+    // Draw line segments between trajectory points
+    for window in trajectory.windows(2) {
+        let (start, end) = (window[0], window[1]);
         commands.spawn((
             StoneMoveLine,
-            Mesh2d(meshes.add(Segment2d::new(start_stone_world_pos, end_stone_world_pos))),
+            Mesh2d(meshes.add(Segment2d::new(start, end))),
             MeshMaterial2d(tile_assets.line_material.clone()),
             Transform::from_xyz(0., 0., 3.0),
         ));
     }
 }
-fn make_all_moves(stone: &Stone, tiles: Query<&Tile>) -> Vec<Stone> {
-    let mut stones: Vec<Stone> = Vec::new();
-    stones.push(stone.clone());
-    //TODO: Loop detect instead of cutoff
-    let mut cutoff = 1000;
-    loop {
-        if cutoff <= 0 {
+
+/// Simulates the stone's trajectory by forward-integrating physics
+fn simulate_trajectory(stone: &Stone, tiles: &Query<&Tile>, config: &HexGridConfig) -> Vec<Vec2> {
+    const SAMPLES: u32 = 20; // Fewer samples for performance in prediction
+    const DT: f32 = 1.0 / 60.0; // Simulate at 644fps
+    const MAX_STEPS: usize = 600; // ~10 seconds of prediction
+    const MIN_VELOCITY: f32 = 1.0; // Stop when velocity is very low
+    const SAMPLE_INTERVAL: usize = 10; // Only record every Nth position to reduce line segments
+
+    let mut trajectory = vec![stone.pos];
+    let mut pos = stone.pos;
+    let mut velocity = stone.velocity;
+
+    for step in 0..MAX_STEPS {
+        if velocity.length_squared() < MIN_VELOCITY * MIN_VELOCITY {
             break;
         }
-        let s = stones.last().unwrap_or(stone);
-        if s.speed > 0 {
-            stones.push(move_stone(s, tiles))
-        } else {
-            break;
+
+        // Apply tile effects using shared physics logic
+        velocity = compute_tile_effects(pos, velocity, tiles.iter(), config, SAMPLES);
+
+        // Step position forward
+        pos += velocity * DT;
+
+        // Only record every Nth position to reduce line segments
+        if step % SAMPLE_INTERVAL == 0 {
+            trajectory.push(pos);
         }
-        cutoff -= 1;
     }
-    stones
+
+    // Always include the final position
+    if trajectory.last() != Some(&pos) {
+        trajectory.push(pos);
+    }
+
+    trajectory
 }
