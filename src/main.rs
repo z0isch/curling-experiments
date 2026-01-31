@@ -1,3 +1,4 @@
+mod hexgrid;
 mod intersection;
 
 use bevy::prelude::*;
@@ -6,43 +7,7 @@ use bevy_rand::{
     plugin::EntropyPlugin,
     prelude::{ChaCha8Rng, WyRand},
 };
-
-/// Resource containing hexagonal grid parameters
-#[derive(Resource)]
-struct HexGridConfig {
-    hex_radius: f32,
-    horiz_spacing: f32,
-    vert_spacing: f32,
-    cols: i32,
-    rows: i32,
-    offset_x: f32,
-    offset_y: f32,
-}
-
-impl HexGridConfig {
-    fn new(hex_radius: f32, cols: i32, rows: i32) -> Self {
-        let horiz_spacing = hex_radius * 1.5;
-        let vert_spacing = hex_radius * 3.0_f32.sqrt();
-        let offset_x = -(cols as f32 * horiz_spacing) / 2.0;
-        let offset_y = -(rows as f32 * vert_spacing) / 2.0;
-
-        Self {
-            hex_radius,
-            horiz_spacing,
-            vert_spacing,
-            cols,
-            rows,
-            offset_x,
-            offset_y,
-        }
-    }
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct HexCoordinate {
-    pub q: i32,
-    pub r: i32,
-}
+use hexgrid::{HexCoordinate, HexGridConfig, hex_to_world, world_to_hex};
 
 /// Event emitted when the mouse hovers over a tile
 #[derive(Event, Debug)]
@@ -110,12 +75,6 @@ struct TileTypeAssets {
 }
 
 #[derive(Component, PartialEq, Debug)]
-struct Tile {
-    hex_coord: HexCoordinate,
-    tile_type: TileType,
-}
-
-#[derive(PartialEq, Debug)]
 enum TileType {
     Wall,
     MaintainSpeed,
@@ -203,10 +162,7 @@ fn setup(
             let assets = get_tile_type_assets(&tile_type, &tile_assets);
 
             commands.spawn((
-                Tile {
-                    hex_coord: HexCoordinate { q, r },
-                    tile_type,
-                },
+                tile_type,
                 Visibility::Visible,
                 Transform::from_xyz(world_pos.x, world_pos.y, 0.0)
                     .with_rotation(Quat::from_rotation_z(std::f32::consts::FRAC_PI_6)),
@@ -252,80 +208,6 @@ fn setup(
     ));
 }
 
-fn hex_to_world(hex_coord: &HexCoordinate, config: &HexGridConfig) -> Vec2 {
-    let x = config.offset_x + hex_coord.q as f32 * config.horiz_spacing;
-    let y_offset = if hex_coord.q % 2 == 1 {
-        config.vert_spacing / 2.0
-    } else {
-        0.0
-    };
-    let y =
-        config.offset_y + (config.rows - 1 - hex_coord.r) as f32 * config.vert_spacing + y_offset;
-
-    Vec2::new(x, y)
-}
-
-/// Converts world position to hex grid coordinates for flat-top hexagons
-fn world_to_hex(world_pos: Vec2, config: &HexGridConfig) -> Option<HexCoordinate> {
-    // Translate position relative to grid origin
-    let rel_x = world_pos.x - config.offset_x;
-    let rel_y = world_pos.y - config.offset_y;
-
-    // Estimate column (accounting for horizontal spacing)
-    let q_estimate = (rel_x / config.horiz_spacing).round() as i32;
-
-    // Check bounds
-    if q_estimate < 0 || q_estimate >= config.cols {
-        return None;
-    }
-
-    // Account for vertical offset on odd columns
-    let y_offset = if q_estimate % 2 == 1 {
-        config.vert_spacing / 2.0
-    } else {
-        0.0
-    };
-
-    // Estimate row (r=0 at top, inverted from y coordinate)
-    let visual_r = ((rel_y - y_offset) / config.vert_spacing).round() as i32;
-    let r_estimate = (config.rows - 1) - visual_r;
-
-    // Check bounds
-    if r_estimate < 0 || r_estimate >= config.rows {
-        return None;
-    }
-
-    // Calculate the center of this hex cell (using inverted r for y position)
-    let hex_center_x = config.offset_x + q_estimate as f32 * config.horiz_spacing;
-    let hex_center_y =
-        config.offset_y + (config.rows - 1 - r_estimate) as f32 * config.vert_spacing + y_offset;
-
-    // Check if point is actually within the hexagon (using distance check)
-    // For flat-top hexagons, the inner radius (apothem) = radius * sqrt(3)/2
-    let dx = (world_pos.x - hex_center_x).abs();
-    let dy = (world_pos.y - hex_center_y).abs();
-
-    // Simple bounding check using the hexagon's geometry
-    let inner_radius = config.hex_radius * 3.0_f32.sqrt() / 2.0;
-
-    // For a flat-top hexagon, check if point is inside
-    // Using the hex boundary equations
-    if dx > config.hex_radius || dy > inner_radius {
-        return None;
-    }
-
-    // More precise check for the angled edges
-    // For flat-top hex: the slanted edges have slope related to the hex geometry
-    if dx * inner_radius + dy * config.hex_radius / 2.0 > config.hex_radius * inner_radius {
-        return None;
-    }
-
-    Some(HexCoordinate {
-        q: q_estimate,
-        r: r_estimate,
-    })
-}
-
 /// System that tracks mouse position and emits MouseTileHoverEvent
 fn track_mouse_tile(
     mut commands: Commands,
@@ -351,17 +233,19 @@ fn track_mouse_tile(
 fn highlight_tile(
     mouse_tile_hover_event: On<MouseTileHoverEvent>,
     tile_assets: Res<TileAssets>,
-    tiles: Query<(&Tile, &Children)>,
+    config: Res<HexGridConfig>,
+    tiles: Query<(&TileType, &Transform, &Children)>,
     mut fill_query: Query<&mut MeshMaterial2d<ColorMaterial>, With<TileFill>>,
 ) {
-    for (tile, children) in &tiles {
+    for (tile_type, transform, children) in &tiles {
         for child in children.iter() {
-            let assets = get_tile_type_assets(&tile.tile_type, &tile_assets);
+            let assets = get_tile_type_assets(tile_type, &tile_assets);
 
             if let Ok(mut mesh_material) = fill_query.get_mut(child) {
+                let tile_hex_coord = world_to_hex(transform.translation.truncate(), &config);
                 if let Some(hex_coord) = &mouse_tile_hover_event.0
-                    && tile.hex_coord == *hex_coord
-                    && tile.tile_type != TileType::Wall
+                    && tile_hex_coord.as_ref() == Some(hex_coord)
+                    && *tile_type != TileType::Wall
                 {
                     mesh_material.0 = assets.hover_material.clone();
                 } else {
@@ -377,7 +261,7 @@ fn change_tile_type(
     camera: Single<(&Camera, &GlobalTransform)>,
     config: Res<HexGridConfig>,
     input: Res<ButtonInput<KeyCode>>,
-    mut tiles: Query<&mut Tile>,
+    mut tiles: Query<(&mut TileType, &Transform)>,
 ) {
     let Some(cursor_pos) = window.cursor_position() else {
         return;
@@ -387,23 +271,24 @@ fn change_tile_type(
         return;
     };
     if let Some(hex_coord) = world_to_hex(world_pos, &config) {
-        let Some(mut current_tile) = tiles.iter_mut().find(|tile| tile.hex_coord == hex_coord)
-        else {
+        let Some((mut tile_type, _)) = tiles.iter_mut().find(|(_, transform)| {
+            world_to_hex(transform.translation.truncate(), &config).as_ref() == Some(&hex_coord)
+        }) else {
             log::error!("Tile not found for stone at position: {:?}", hex_coord);
             return;
         };
 
         if input.just_pressed(KeyCode::KeyW) {
-            current_tile.tile_type = TileType::MaintainSpeed;
+            *tile_type = TileType::MaintainSpeed;
         }
         if input.just_pressed(KeyCode::KeyA) {
-            current_tile.tile_type = TileType::TurnClockwise;
+            *tile_type = TileType::TurnClockwise;
         }
         if input.just_pressed(KeyCode::KeyD) {
-            current_tile.tile_type = TileType::TurnCounterclockwise;
+            *tile_type = TileType::TurnCounterclockwise;
         }
         if input.just_pressed(KeyCode::KeyS) {
-            current_tile.tile_type = TileType::SlowDown;
+            *tile_type = TileType::SlowDown;
         }
     }
 }
@@ -462,14 +347,18 @@ fn update_stone_position(
 /// Uses circle_hexagon_overlap_ratio as a multiplicative factor for the effect strength.
 fn apply_tile_velocity_effects(
     mut stone: Single<(&mut Velocity, &mut Transform), With<Stone>>,
-    tiles: Query<&Tile>,
+    tiles: Query<(&TileType, &Transform), Without<Stone>>,
     config: Res<HexGridConfig>,
 ) {
     const SAMPLES: u32 = 100;
+    let tile_data: Vec<_> = tiles
+        .iter()
+        .map(|(tile_type, transform)| (tile_type, transform.translation.truncate()))
+        .collect();
     *stone.0 = compute_tile_effects(
         stone.1.translation.truncate(),
         &stone.0,
-        tiles.iter(),
+        tile_data.iter().map(|(tt, pos)| (*tt, *pos)),
         &config,
         SAMPLES,
     );
@@ -483,7 +372,7 @@ const DRAG_COEFFICIENT: f32 = 0.001;
 fn compute_tile_effects<'a>(
     pos: Vec2,
     velocity: &Velocity,
-    tiles: impl Iterator<Item = &'a Tile>,
+    tiles: impl Iterator<Item = (&'a TileType, Vec2)>,
     config: &HexGridConfig,
     samples: u32,
 ) -> Velocity {
@@ -491,8 +380,7 @@ fn compute_tile_effects<'a>(
     let mut total_drag = 0.0_f32;
     let mut new_velocity = velocity.clone();
 
-    for tile in tiles {
-        let tile_world_pos = hex_to_world(&tile.hex_coord, config);
+    for (tile_type, tile_world_pos) in tiles {
         let overlap_ratio = intersection::circle_hexagon_overlap_ratio(
             pos,
             STONE_RADIUS,
@@ -505,7 +393,7 @@ fn compute_tile_effects<'a>(
             continue;
         }
 
-        match tile.tile_type {
+        match tile_type {
             TileType::Wall => {
                 // Immediately reflect velocity off the wall
                 let to_wall = tile_world_pos - pos;
@@ -567,15 +455,26 @@ fn draw_move_line(
     tile_assets: Res<TileAssets>,
     config: Res<HexGridConfig>,
     stone: Single<(&Velocity, &Transform), With<Stone>>,
-    tiles: Query<&Tile>,
+    tiles: Query<(&TileType, &Transform), Without<Stone>>,
     lines: Query<Entity, With<StoneMoveLine>>,
 ) {
     for l in &lines {
         commands.entity(l).despawn();
     }
 
+    // Collect tile data for trajectory simulation
+    let tile_data: Vec<_> = tiles
+        .iter()
+        .map(|(tile_type, transform)| (tile_type, transform.translation.truncate()))
+        .collect();
+
     // Simulate physics forward to predict trajectory
-    let trajectory = simulate_trajectory(&stone.1.translation.truncate(), stone.0, &tiles, &config);
+    let trajectory = simulate_trajectory(
+        &stone.1.translation.truncate(),
+        stone.0,
+        &tile_data,
+        &config,
+    );
 
     // Draw line segments between trajectory points
     for window in trajectory.windows(2) {
@@ -593,7 +492,7 @@ fn draw_move_line(
 fn simulate_trajectory(
     position: &Vec2,
     velocity: &Velocity,
-    tiles: &Query<&Tile>,
+    tile_data: &[(&TileType, Vec2)],
     config: &HexGridConfig,
 ) -> Vec<Vec2> {
     const SAMPLES: u32 = 20; // Fewer samples for performance in prediction
@@ -612,7 +511,13 @@ fn simulate_trajectory(
         }
 
         // Apply tile effects using shared physics logic
-        velocity = compute_tile_effects(pos, &velocity, tiles.iter(), config, SAMPLES);
+        velocity = compute_tile_effects(
+            pos,
+            &velocity,
+            tile_data.iter().map(|(tt, p)| (*tt, *p)),
+            config,
+            SAMPLES,
+        );
 
         // Step position forward
         pos += velocity.0 * DT;
