@@ -126,7 +126,7 @@ struct TileCoordinateText;
 
 const COLORS: [Color; 6] = [
     // #dcf3ff
-    Color::srgb(220.0 / 255.0, 243.0 / 255.0, 255.0 / 255.0),
+    Color::srgb(220.0 / 255.0, 243.0 / 255.0, 1.),
     // #baf2ef
     Color::srgb(186.0 / 255.0, 242.0 / 255.0, 239.0 / 255.0),
     // #a2d2df
@@ -251,7 +251,7 @@ fn setup(
         },
     };
 
-    commands.spawn(Camera2d::default());
+    commands.spawn(Camera2d);
 
     let hex_border_mesh = meshes.add(RegularPolygon::new(config.hex_radius, 6));
     let black_material = materials.add(Color::BLACK);
@@ -510,10 +510,10 @@ fn click_tile(
         return;
     };
 
-    if let Some(hex_coord) = world_to_hex(world_pos, &config) {
-        if mouse.just_pressed(MouseButton::Left) {
-            stone.pos = hex_coord;
-        }
+    if let Some(hex_coord) = world_to_hex(world_pos, &config)
+        && mouse.just_pressed(MouseButton::Left)
+    {
+        stone.pos = hex_coord;
     }
 }
 
