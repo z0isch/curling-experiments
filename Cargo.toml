@@ -7,6 +7,12 @@ edition = "2024"
 bevy = { version = "0.18", features = ["free_camera"] }
 bevy_egui = "0.39"
 avian3d = { version = "0.5", features = ["collider-from-mesh"] }
+bevy_rand = { version = "0.13", features = [
+    "rand_chacha",
+    "wyrand",
+    "wasm_js",
+] }
+rand = "0.9"
 # Set max log levels. This helps avoid unwanted low-severity log spam, which can affect performance.
 log = { version = "0.4", features = [
     "max_level_debug",
