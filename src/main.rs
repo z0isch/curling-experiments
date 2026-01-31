@@ -36,7 +36,7 @@ impl HexGridConfig {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct HexCoordinate {
     pub q: i32,
     pub r: i32,
@@ -71,6 +71,7 @@ fn main() {
         .add_systems(Update, click_tile)
         .add_systems(Update, move_stone_on_space)
         .add_systems(Update, change_tile_type)
+        .add_systems(Update, draw_move_line)
         .add_observer(highlight_tile)
         .run();
 }
@@ -78,6 +79,7 @@ fn main() {
 #[derive(Resource)]
 struct TileAssets {
     hex_mesh: Handle<Mesh>,
+    line_material: Handle<ColorMaterial>,
     wall: TileTypeAssets,
     maintain_speed: TileTypeAssets,
     slow_down: TileTypeAssets,
@@ -210,7 +212,7 @@ impl Facing {
     }
 }
 
-#[derive(Component)]
+#[derive(Component, Clone)]
 struct Stone {
     pos: HexCoordinate,
     facing: Facing,
@@ -219,6 +221,9 @@ struct Stone {
 
 #[derive(Component)]
 struct StoneArrow;
+
+#[derive(Component)]
+struct StoneMoveLine;
 
 fn setup(
     mut commands: Commands,
@@ -229,6 +234,7 @@ fn setup(
     let border_thickness = 1.0;
     let tile_assets = TileAssets {
         hex_mesh: meshes.add(RegularPolygon::new(config.hex_radius - border_thickness, 6)),
+        line_material: materials.add(COLORS[5]),
         wall: TileTypeAssets {
             material: materials.add(COLORS[3]),
             hover_material: materials.add(COLORS[3].with_alpha(0.8)),
@@ -553,23 +559,28 @@ fn draw_stone(
 
 fn move_stone_on_space(
     input: Res<ButtonInput<KeyCode>>,
-    stone: Single<&mut Stone>,
+    mut stone: Single<&mut Stone>,
     tiles: Query<&Tile>,
 ) {
     if input.just_pressed(KeyCode::Space) {
-        move_stone(stone, tiles);
+        let next_stone = move_stone(stone.as_ref(), tiles);
+        stone.facing = next_stone.facing;
+        stone.pos = next_stone.pos;
+        stone.speed = next_stone.speed;
     }
 }
 
-fn move_stone(mut stone: Single<&mut Stone>, tiles: Query<&Tile>) {
+fn move_stone(stone: &Stone, tiles: Query<&Tile>) -> Stone {
+    let mut next_stone = stone.clone();
+
     if stone.speed <= 0 {
-        return;
+        return next_stone;
     }
 
     //Find the tile at the stone's position
     let Some(current_tile) = tiles.iter().find(|tile| tile.hex_coord == stone.pos) else {
         log::error!("Tile not found for stone at position: {:?}", stone.pos);
-        return;
+        return next_stone;
     };
     log::info!("Current tile: {:?}", current_tile);
 
@@ -581,7 +592,7 @@ fn move_stone(mut stone: Single<&mut Stone>, tiles: Query<&Tile>) {
         TileType::TurnClockwise => stone.facing.rotate_clockwise(),
     };
 
-    stone.facing = facing_direction;
+    next_stone.facing = facing_direction;
 
     let (dq, dr) = facing_direction.to_offset(current_tile.hex_coord.q % 2 == 1);
 
@@ -595,12 +606,12 @@ fn move_stone(mut stone: Single<&mut Stone>, tiles: Query<&Tile>) {
             "Tile not found for stone at position: {:?}",
             next_tile_coord
         );
-        return;
+        return next_stone;
     };
 
     log::info!("Next tile: {:?}", next_tile);
 
-    stone.speed = match current_tile.tile_type {
+    next_stone.speed = match current_tile.tile_type {
         TileType::Wall => stone.speed,
         TileType::MaintainSpeed => stone.speed,
         TileType::SlowDown => stone.speed - 1,
@@ -610,27 +621,72 @@ fn move_stone(mut stone: Single<&mut Stone>, tiles: Query<&Tile>) {
 
     match next_tile.tile_type {
         TileType::Wall => {
-            stone.facing = stone
+            next_stone.facing = stone
                 .facing
                 .rotate_counterclockwise()
                 .rotate_counterclockwise()
                 .rotate_counterclockwise();
-            stone.speed -= 1;
+            next_stone.speed -= 1;
         }
         TileType::MaintainSpeed => {
-            stone.pos = next_tile_coord;
+            next_stone.pos = next_tile_coord;
         }
         TileType::SlowDown => {
-            stone.pos = next_tile_coord;
-            stone.speed -= 1;
+            next_stone.pos = next_tile_coord;
+            next_stone.speed -= 1;
         }
         TileType::TurnCounterclockwise => {
-            stone.pos = next_tile_coord;
-            stone.speed -= 1;
+            next_stone.pos = next_tile_coord;
+            next_stone.speed -= 1;
         }
         TileType::TurnClockwise => {
-            stone.pos = next_tile_coord;
-            stone.speed -= 1;
+            next_stone.pos = next_tile_coord;
+            next_stone.speed -= 1;
         }
     }
+    next_stone
+}
+
+fn draw_move_line(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    tile_assets: Res<TileAssets>,
+    config: Res<HexGridConfig>,
+    stone: Single<&Stone>,
+    tiles: Query<&Tile>,
+    lines: Query<Entity, With<StoneMoveLine>>,
+) {
+    let stones = make_all_moves(*stone, tiles);
+    for l in lines {
+        commands.entity(l).despawn();
+    }
+    for (start, end) in stones.iter().zip(stones.iter().skip(1)) {
+        let start_stone_world_pos = hex_to_world(&start.pos, &config);
+        let end_stone_world_pos = hex_to_world(&end.pos, &config);
+        commands.spawn((
+            StoneMoveLine,
+            Mesh2d(meshes.add(Segment2d::new(start_stone_world_pos, end_stone_world_pos))),
+            MeshMaterial2d(tile_assets.line_material.clone()),
+            Transform::from_xyz(0., 0., 3.0),
+        ));
+    }
+}
+fn make_all_moves(stone: &Stone, tiles: Query<&Tile>) -> Vec<Stone> {
+    let mut stones: Vec<Stone> = Vec::new();
+    stones.push(stone.clone());
+    //TODO: Loop detect instead of cutoff
+    let mut cutoff = 1000;
+    loop {
+        if cutoff <= 0 {
+            break;
+        }
+        let s = stones.last().unwrap_or(stone);
+        if s.speed > 0 {
+            stones.push(move_stone(s, tiles))
+        } else {
+            break;
+        }
+        cutoff -= 1;
+    }
+    stones
 }
