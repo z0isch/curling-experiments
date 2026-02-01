@@ -69,12 +69,21 @@ pub struct UiState {
     pub drag_coefficient: f32,
     pub stone_velocity_magnitude: f32,
     pub stone_facing: Facing,
+    pub min_sweep_distance: f32,
+    pub hex_radius: f32,
+    pub stone_radius: f32,
 }
 
 fn ui(mut contexts: EguiContexts, mut ui_state: ResMut<UiState>) -> Result {
     egui::Window::new("").show(contexts.ctx_mut()?, |ui| {
         ui.add(egui::Label::new("R to restart"));
         ui.add(egui::Label::new("Space to pause/resume"));
+        ui.add(egui::Slider::new(&mut ui_state.hex_radius, 20.0..=80.0).text("Hex Radius"));
+        ui.add(egui::Slider::new(&mut ui_state.stone_radius, 10.0..=30.0).text("Stone Radius"));
+        ui.add(
+            egui::Slider::new(&mut ui_state.min_sweep_distance, 0.0..=200.0)
+                .text("Min Sweep Distance"),
+        );
         ui.add(
             egui::Slider::new(&mut ui_state.drag_coefficient, 0.001..=0.01)
                 .text("Drag Coefficient"),
@@ -104,18 +113,21 @@ fn setup(
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
     commands.insert_resource(PhysicsPaused(true));
+    let level = get_level();
     let initial_velocity =
-        get_initial_stone_velocity(&get_level().facing, &get_level().stone_velocity_magnitude);
+        get_initial_stone_velocity(&level.facing, &level.stone_velocity_magnitude);
     let ui_state = UiState {
         drag_coefficient: 0.01,
-        stone_velocity_magnitude: get_level().stone_velocity_magnitude,
-        stone_facing: get_level().facing,
+        stone_velocity_magnitude: level.stone_velocity_magnitude,
+        stone_facing: level.facing.clone(),
+        min_sweep_distance: 175.0,
+        hex_radius: 70.0,
+        stone_radius: 25.0,
     };
-    commands.insert_resource(ui_state);
 
     commands.spawn(Camera2d);
 
-    let grid = HexGrid::new(35.0, get_level());
+    let grid = HexGrid::new(ui_state.hex_radius, &level);
     let tile_assets = TileAssets::new(&mut meshes, &mut materials, &grid);
 
     spawn_hex_grid(&mut commands, &grid, &tile_assets);
@@ -124,12 +136,13 @@ fn setup(
         &mut meshes,
         &mut materials,
         &grid,
-        grid.level.start_coordinate.clone(),
+        &grid.level.start_coordinate,
         initial_velocity,
-        10.,
+        ui_state.stone_radius,
     ));
 
     commands.insert_resource(tile_assets);
+    commands.insert_resource(ui_state);
 }
 
 /// System that toggles physics pause when Space is pressed
@@ -141,17 +154,33 @@ fn toggle_physics_pause(input: Res<ButtonInput<KeyCode>>, mut paused: ResMut<Phy
 
 /// System that restarts the game when 'R' key is pressed
 pub fn restart_game(
+    mut commands: Commands,
     input: Res<ButtonInput<KeyCode>>,
-    grid: Single<&HexGrid>,
+    grid: Single<Entity, With<HexGrid>>,
     ui_state: Res<UiState>,
-    mut stone: Single<(&mut Velocity, &mut Transform), With<Stone>>,
+    stone_query: Single<Entity, With<Stone>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
     if input.just_pressed(KeyCode::KeyR) {
-        let initial_hex = HexCoordinate { q: 1, r: 1 };
-        let stone_world_pos = hex_to_world(&initial_hex, *grid);
-        stone.0.0 =
-            get_initial_stone_velocity(&ui_state.stone_facing, &ui_state.stone_velocity_magnitude);
-        stone.1.translation = stone_world_pos.extend(3.0);
+        let mut level = get_level();
+        level.facing = ui_state.stone_facing.clone();
+        level.stone_velocity_magnitude = ui_state.stone_velocity_magnitude;
+
+        commands.entity(*grid).despawn();
+
+        let grid = HexGrid::new(ui_state.hex_radius, &level);
+        let tile_assets = TileAssets::new(&mut meshes, &mut materials, &grid);
+        spawn_hex_grid(&mut commands, &grid, &tile_assets);
+        commands.entity(*stone_query).despawn();
+        commands.spawn(stone(
+            &mut meshes,
+            &mut materials,
+            &grid,
+            &level.start_coordinate,
+            get_initial_stone_velocity(&level.facing, &level.stone_velocity_magnitude),
+            ui_state.stone_radius,
+        ));
     }
 }
 

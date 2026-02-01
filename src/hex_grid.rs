@@ -22,7 +22,7 @@ pub struct HexGrid {
 }
 
 impl HexGrid {
-    pub fn new(hex_radius: f32, level: Level) -> Self {
+    pub fn new(hex_radius: f32, level: &Level) -> Self {
         let cols = level.grid.keys().map(|coord| coord.q).max().unwrap_or(0) + 1;
         let rows = level.grid.keys().map(|coord| coord.r).max().unwrap_or(0) + 1;
         let horiz_spacing = hex_radius * 1.5;
@@ -38,7 +38,7 @@ impl HexGrid {
             rows,
             offset_x,
             offset_y,
-            level,
+            level: level.clone(),
         }
     }
 }
@@ -232,7 +232,7 @@ pub fn get_level() -> Level {
         (goal_coordinate.clone(), TileType::Goal),
     ]);
 
-    let stone_velocity_magnitude = 150.0;
+    let stone_velocity_magnitude = 250.0;
     let facing = Facing::DownRight;
 
     Level {

@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
 use crate::hex_grid::{HexGrid, world_to_hex};
-use crate::intersection;
+use crate::{UiState, intersection};
 
 // ============================================================================
 // Bundle Function
@@ -294,13 +294,24 @@ pub fn update_tile_hover_material(
 
 /// Updates the tile dragging text to display the distance dragged (sweep count)
 pub fn update_sweep_count(
-    tiles: Query<(&TileDragging, &Children)>,
-    mut text_query: Query<&mut Text2d, With<TileDraggingText>>,
+    ui_state: Res<UiState>,
+    tiles: Query<(Entity, &TileDragging, &mut TileType)>,
+    children_query: Query<&Children>,
+    mut fill_query: Query<&mut MeshMaterial2d<ColorMaterial>, With<TileFill>>,
+    tile_assets: Res<TileAssets>,
 ) {
-    for (tile_dragging, children) in &tiles {
-        for child in children.iter() {
-            if let Ok(mut text) = text_query.get_mut(child) {
-                text.0 = format!("{:.0}", tile_dragging.distance_dragged);
+    for (entity, tile_dragging, mut tile_type) in tiles {
+        if tile_dragging.distance_dragged > ui_state.min_sweep_distance {
+            *tile_type = TileType::MaintainSpeed;
+
+            let Ok(children) = children_query.get(entity) else {
+                return;
+            };
+            for child in children.iter() {
+                let assets = tile_assets.get_assets(&tile_type);
+                if let Ok(mut mesh_material) = fill_query.get_mut(child) {
+                    mesh_material.0 = assets.material.clone();
+                }
             }
         }
     }
@@ -364,7 +375,7 @@ pub fn on_tile_dragging(
     window: Single<&Window>,
     camera: Single<(&Camera, &GlobalTransform)>,
     grid: Single<&HexGrid>,
-    mut tiles: Query<(&mut TileDragging, &Transform)>,
+    mut tiles: Query<(&mut TileDragging, &Transform, &TileType)>,
 ) {
     let Some(cursor_pos) = window.cursor_position() else {
         return;
@@ -374,12 +385,15 @@ pub fn on_tile_dragging(
         return;
     };
     if let Some(hex_coord) = world_to_hex(world_pos, *grid) {
-        let Some((mut tile_dragging, _)) = tiles.iter_mut().find(|(_, transform)| {
+        let Some((mut tile_dragging, _, tile_type)) = tiles.iter_mut().find(|(_, transform, _)| {
             world_to_hex(transform.translation.truncate(), *grid).as_ref() == Some(&hex_coord)
         }) else {
             log::error!("Tile not found for stone at position: {:?}", hex_coord);
             return;
         };
+        if *tile_type == TileType::Goal || *tile_type == TileType::Wall {
+            return;
+        }
         tile_dragging.distance_dragged +=
             (drag.pointer_location.position - tile_dragging.last_position).length();
         tile_dragging.last_position = drag.pointer_location.position;

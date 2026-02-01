@@ -18,13 +18,13 @@ pub fn stone(
     meshes: &mut Assets<Mesh>,
     materials: &mut Assets<ColorMaterial>,
     grid: &HexGrid,
-    hex_coord: HexCoordinate,
+    hex_coord: &HexCoordinate,
     velocity: Vec2,
     radius: f32,
 ) -> impl Bundle {
     let black_material = materials.add(Color::BLACK);
     let stone_mesh = meshes.add(Circle::new(radius));
-    let stone_world_pos = hex_to_world(&hex_coord, grid);
+    let stone_world_pos = hex_to_world(hex_coord, grid);
     (
         Stone { radius },
         Velocity(velocity),
