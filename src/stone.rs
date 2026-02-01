@@ -53,7 +53,7 @@ pub fn update_stone_position(
                 ) >= 0.9
         })
     {
-        stone.2.translation = hex_to_world(&HexCoordinate { q: 8, r: 4 }, *grid).extend(3.0);
+        stone.2.translation = hex_to_world(&grid.level.goal_coordinate, *grid).extend(3.0);
     } else {
         let delta = stone.1.0 * time.delta_secs();
         stone.2.translation += delta.extend(0.);

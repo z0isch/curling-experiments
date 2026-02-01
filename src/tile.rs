@@ -97,7 +97,7 @@ pub const COLORS: [Color; 6] = [
 // Components
 // ============================================================================
 
-#[derive(Component, PartialEq, Debug)]
+#[derive(Component, PartialEq, Debug, Clone)]
 pub enum TileType {
     Wall,
     MaintainSpeed,

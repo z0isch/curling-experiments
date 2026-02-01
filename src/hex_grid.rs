@@ -1,3 +1,5 @@
+use std::{collections::HashMap, fmt::Display, slice::Iter};
+
 use bevy::prelude::*;
 
 use crate::tile::{
@@ -16,10 +18,13 @@ pub struct HexGrid {
     pub rows: i32,
     pub offset_x: f32,
     pub offset_y: f32,
+    pub level: Level,
 }
 
 impl HexGrid {
-    pub fn new(hex_radius: f32, cols: i32, rows: i32) -> Self {
+    pub fn new(hex_radius: f32, level: Level) -> Self {
+        let cols = level.grid.keys().map(|coord| coord.q).max().unwrap_or(0) + 1;
+        let rows = level.grid.keys().map(|coord| coord.r).max().unwrap_or(0) + 1;
         let horiz_spacing = hex_radius * 1.5;
         let vert_spacing = hex_radius * 3.0_f32.sqrt();
         let offset_x = -(cols as f32 * horiz_spacing) / 2.0;
@@ -33,11 +38,12 @@ impl HexGrid {
             rows,
             offset_x,
             offset_y,
+            level,
         }
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
 pub struct HexCoordinate {
     pub q: i32,
     pub r: i32,
@@ -126,21 +132,16 @@ pub fn spawn_hex_grid(commands: &mut Commands, grid: &HexGrid, tile_assets: &Til
     for q in 0..grid.cols {
         for r in 0..grid.rows {
             let world_pos = hex_to_world(&HexCoordinate { q, r }, grid);
-            let tile_type = if q == 0 || q == grid.cols - 1 || r == 0 || r == grid.rows - 1 {
-                TileType::Wall
-            } else if q == 8 && r == 4 {
-                TileType::Goal
-            } else {
-                TileType::SlowDown
-            };
-            let tile_id = commands
-                .spawn(tile(tile_type, world_pos, q, r, tile_assets))
-                .observe(on_pointer_over)
-                .observe(on_pointer_out)
-                .observe(on_tile_dragging)
-                .observe(on_tile_drag_enter)
-                .id();
-            tile_entities.push(tile_id);
+            if let Some(tile_type) = grid.level.grid.get(&HexCoordinate { q, r }) {
+                let tile_id = commands
+                    .spawn(tile(tile_type.clone(), world_pos, q, r, tile_assets))
+                    .observe(on_pointer_over)
+                    .observe(on_pointer_out)
+                    .observe(on_tile_dragging)
+                    .observe(on_tile_drag_enter)
+                    .id();
+                tile_entities.push(tile_id);
+            }
         }
     }
 
@@ -152,4 +153,93 @@ pub fn spawn_hex_grid(commands: &mut Commands, grid: &HexGrid, tile_assets: &Til
         ))
         .add_children(&tile_entities)
         .id()
+}
+
+#[derive(Clone, PartialEq, Debug)]
+pub enum Facing {
+    Up,
+    UpRight,
+    DownRight,
+    Down,
+    DownLeft,
+    UpLeft,
+}
+
+impl Facing {
+    pub fn iterator() -> Iter<'static, Facing> {
+        static DIRECTIONS: [Facing; 6] = [
+            Facing::Up,
+            Facing::UpRight,
+            Facing::DownRight,
+            Facing::Down,
+            Facing::DownLeft,
+            Facing::UpLeft,
+        ];
+        DIRECTIONS.iter()
+    }
+}
+
+impl Display for Facing {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+#[derive(Clone, PartialEq, Debug)]
+pub struct Level {
+    pub grid: HashMap<HexCoordinate, TileType>,
+    pub goal_coordinate: HexCoordinate,
+    pub start_coordinate: HexCoordinate,
+    pub stone_velocity_magnitude: f32,
+    pub facing: Facing,
+}
+
+pub fn get_initial_stone_velocity(facing: &Facing, stone_velocity_magnitude: &f32) -> Vec2 {
+    use std::f32::consts::{FRAC_PI_2, FRAC_PI_6};
+    // For flat-top hexagon, 6 directions are 60° (π/3) apart
+    // Vec2::from_angle(0) points right (+X), angles increase counter-clockwise
+    let angle = match facing {
+        Facing::Up => FRAC_PI_2,                    // 90° - straight up
+        Facing::UpRight => FRAC_PI_6,               // 30° - up and right
+        Facing::DownRight => -FRAC_PI_6,            // -30° - down and right
+        Facing::Down => -FRAC_PI_2,                 // -90° - straight down
+        Facing::DownLeft => -FRAC_PI_2 - FRAC_PI_6, // -120° - down and left
+        Facing::UpLeft => FRAC_PI_2 + FRAC_PI_6,    // 120° - up and left
+    };
+    Vec2::from_angle(angle) * *stone_velocity_magnitude
+}
+
+pub fn get_level() -> Level {
+    let goal_coordinate = HexCoordinate { q: 4, r: 2 };
+    let start_coordinate = HexCoordinate { q: 1, r: 1 };
+
+    let grid = HashMap::from([
+        (HexCoordinate { q: 0, r: 0 }, TileType::Wall),
+        (HexCoordinate { q: 0, r: 1 }, TileType::Wall),
+        (HexCoordinate { q: 1, r: 2 }, TileType::Wall),
+        (HexCoordinate { q: 2, r: 2 }, TileType::Wall),
+        (HexCoordinate { q: 3, r: 3 }, TileType::Wall),
+        (HexCoordinate { q: 4, r: 3 }, TileType::Wall),
+        (HexCoordinate { q: 5, r: 3 }, TileType::Wall),
+        (HexCoordinate { q: 5, r: 2 }, TileType::Wall),
+        (HexCoordinate { q: 4, r: 1 }, TileType::Wall),
+        (HexCoordinate { q: 3, r: 1 }, TileType::Wall),
+        (HexCoordinate { q: 2, r: 0 }, TileType::Wall),
+        (HexCoordinate { q: 1, r: 0 }, TileType::Wall),
+        (start_coordinate.clone(), TileType::MaintainSpeed),
+        (HexCoordinate { q: 2, r: 1 }, TileType::SlowDown),
+        (HexCoordinate { q: 3, r: 2 }, TileType::SlowDown),
+        (goal_coordinate.clone(), TileType::Goal),
+    ]);
+
+    let stone_velocity_magnitude = 150.0;
+    let facing = Facing::DownRight;
+
+    Level {
+        grid,
+        goal_coordinate,
+        start_coordinate,
+        stone_velocity_magnitude,
+        facing,
+    }
 }

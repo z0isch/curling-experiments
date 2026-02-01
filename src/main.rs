@@ -14,7 +14,10 @@ use hex_grid::{HexCoordinate, HexGrid, spawn_hex_grid};
 use stone::{Stone, Velocity, apply_tile_velocity_effects, stone, update_stone_position};
 use tile::{TileAssets, TileType, change_tile_type, compute_tile_effects, toggle_tile_coordinates};
 
-use crate::{hex_grid::hex_to_world, tile::update_sweep_count};
+use crate::{
+    hex_grid::{Facing, get_initial_stone_velocity, get_level, hex_to_world},
+    tile::update_sweep_count,
+};
 
 #[derive(Component)]
 struct StoneMoveLine;
@@ -41,7 +44,6 @@ fn main() {
         ))
         .add_systems(EguiPrimaryContextPass, ui)
         .add_systems(Startup, setup)
-        .init_resource::<PhysicsPaused>()
         .add_systems(
             FixedUpdate,
             (update_stone_position, apply_tile_velocity_effects)
@@ -62,27 +64,36 @@ fn main() {
         .run();
 }
 
-#[derive(Resource, Clone)]
+#[derive(Resource, Clone, Debug)]
 pub struct UiState {
     pub drag_coefficient: f32,
-    pub stone_velocity_x: f32,
-    pub stone_velocity_y: f32,
+    pub stone_velocity_magnitude: f32,
+    pub stone_facing: Facing,
 }
 
 fn ui(mut contexts: EguiContexts, mut ui_state: ResMut<UiState>) -> Result {
     egui::Window::new("").show(contexts.ctx_mut()?, |ui| {
+        ui.add(egui::Label::new("R to restart"));
+        ui.add(egui::Label::new("Space to pause/resume"));
         ui.add(
-            egui::Slider::new(&mut ui_state.drag_coefficient, 0.001..=0.05)
+            egui::Slider::new(&mut ui_state.drag_coefficient, 0.001..=0.01)
                 .text("Drag Coefficient"),
         );
         ui.add(
-            egui::Slider::new(&mut ui_state.stone_velocity_x, -500.0..=500.0)
-                .text("Stone Velocity X"),
+            egui::Slider::new(&mut ui_state.stone_velocity_magnitude, 0.0..=500.0)
+                .text("Stone Velocity Magnitude"),
         );
-        ui.add(
-            egui::Slider::new(&mut ui_state.stone_velocity_y, -500.0..=500.0)
-                .text("Stone Velocity Y"),
-        );
+        egui::ComboBox::from_label("Stone Facing")
+            .selected_text(format!("{:?}", ui_state.stone_facing))
+            .show_ui(ui, |ui| {
+                for facing in Facing::iterator() {
+                    ui.selectable_value(
+                        &mut ui_state.stone_facing,
+                        facing.clone(),
+                        facing.to_string(),
+                    );
+                }
+            });
     });
     Ok(())
 }
@@ -92,19 +103,19 @@ fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
-    let initial_velocity = Vec2::from_angle(-std::f32::consts::FRAC_PI_3 / 2.) * 300.0;
+    commands.insert_resource(PhysicsPaused(true));
+    let initial_velocity =
+        get_initial_stone_velocity(&get_level().facing, &get_level().stone_velocity_magnitude);
     let ui_state = UiState {
-        drag_coefficient: 0.002,
-        stone_velocity_x: initial_velocity.x,
-        stone_velocity_y: initial_velocity.y,
+        drag_coefficient: 0.01,
+        stone_velocity_magnitude: get_level().stone_velocity_magnitude,
+        stone_facing: get_level().facing,
     };
-    let stone_velocity_x = ui_state.stone_velocity_x;
-    let stone_velocity_y = ui_state.stone_velocity_y;
     commands.insert_resource(ui_state);
 
     commands.spawn(Camera2d);
 
-    let grid = HexGrid::new(35.0, 15, 10);
+    let grid = HexGrid::new(35.0, get_level());
     let tile_assets = TileAssets::new(&mut meshes, &mut materials, &grid);
 
     spawn_hex_grid(&mut commands, &grid, &tile_assets);
@@ -113,8 +124,8 @@ fn setup(
         &mut meshes,
         &mut materials,
         &grid,
-        HexCoordinate { q: 1, r: 1 },
-        Vec2::new(stone_velocity_x, stone_velocity_y),
+        grid.level.start_coordinate.clone(),
+        initial_velocity,
         10.,
     ));
 
@@ -138,7 +149,8 @@ pub fn restart_game(
     if input.just_pressed(KeyCode::KeyR) {
         let initial_hex = HexCoordinate { q: 1, r: 1 };
         let stone_world_pos = hex_to_world(&initial_hex, *grid);
-        stone.0.0 = Vec2::new(ui_state.stone_velocity_x, ui_state.stone_velocity_y);
+        stone.0.0 =
+            get_initial_stone_velocity(&ui_state.stone_facing, &ui_state.stone_velocity_magnitude);
         stone.1.translation = stone_world_pos.extend(3.0);
     }
 }
