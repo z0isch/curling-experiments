@@ -10,12 +10,12 @@ use bevy_rand::{
     plugin::EntropyPlugin,
     prelude::{ChaCha8Rng, WyRand},
 };
-use hex_grid::{HexCoordinate, HexGrid, spawn_hex_grid};
+use hex_grid::{HexGrid, spawn_hex_grid};
 use stone::{Stone, Velocity, apply_tile_velocity_effects, stone, update_stone_position};
 use tile::{TileAssets, TileType, change_tile_type, compute_tile_effects, toggle_tile_coordinates};
 
 use crate::{
-    hex_grid::{Facing, get_initial_stone_velocity, get_level, hex_to_world},
+    hex_grid::{Facing, get_initial_stone_velocity, get_level},
     tile::update_sweep_count,
 };
 
