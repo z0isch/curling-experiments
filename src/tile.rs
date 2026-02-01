@@ -14,8 +14,6 @@ pub fn tile(
     world_pos: Vec2,
     q: i32,
     r: i32,
-    hex_border_mesh: Handle<Mesh>,
-    black_material: Handle<ColorMaterial>,
     tile_assets: &TileAssets,
 ) -> impl Bundle {
     let assets = tile_assets.get_assets(&tile_type);
@@ -26,7 +24,10 @@ pub fn tile(
         Transform::from_xyz(world_pos.x, world_pos.y, 0.0)
             .with_rotation(Quat::from_rotation_z(std::f32::consts::FRAC_PI_6)),
         children![
-            (Mesh2d(hex_border_mesh), MeshMaterial2d(black_material)),
+            (
+                Mesh2d(tile_assets.hex_border_mesh.clone()),
+                MeshMaterial2d(tile_assets.border_material.clone()),
+            ),
             (
                 TileFill,
                 Mesh2d(tile_assets.hex_mesh.clone()),
@@ -95,6 +96,8 @@ pub struct TileCoordinateText;
 #[derive(Resource)]
 pub struct TileAssets {
     pub hex_mesh: Handle<Mesh>,
+    pub hex_border_mesh: Handle<Mesh>,
+    pub border_material: Handle<ColorMaterial>,
     pub line_material: Handle<ColorMaterial>,
     pub wall: TileTypeAssets,
     pub maintain_speed: TileTypeAssets,
@@ -111,8 +114,8 @@ pub struct TileTypeAssets {
 
 impl TileAssets {
     pub fn new(
-        meshes: &mut ResMut<Assets<Mesh>>,
-        materials: &mut ResMut<Assets<ColorMaterial>>,
+        meshes: &mut Assets<Mesh>,
+        materials: &mut Assets<ColorMaterial>,
         hex_grid: &HexGrid,
     ) -> Self {
         let border_thickness = 1.0;
@@ -121,6 +124,8 @@ impl TileAssets {
                 hex_grid.hex_radius - border_thickness,
                 6,
             )),
+            hex_border_mesh: meshes.add(RegularPolygon::new(hex_grid.hex_radius, 6)),
+            border_material: materials.add(Color::BLACK),
             line_material: materials.add(COLORS[5]),
             wall: TileTypeAssets {
                 material: materials.add(COLORS[3]),
@@ -262,13 +267,13 @@ pub fn update_tile_hover_material(
 /// This is the core physics logic shared by both real-time simulation and trajectory prediction.
 pub fn compute_tile_effects(
     pos: Vec2,
-    velocity: &crate::Velocity,
+    velocity: &crate::stone::Velocity,
     tiles: &[(&TileType, Vec2)],
     hex_grid: &HexGrid,
     drag_coefficient: f32,
     samples: u32,
     stone_radius: f32,
-) -> crate::Velocity {
+) -> crate::stone::Velocity {
     let mut rotation_angle = 0.0_f32;
     let mut total_drag = 0.0_f32;
     let mut new_velocity = velocity.clone();

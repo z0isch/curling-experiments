@@ -1,5 +1,10 @@
 use bevy::prelude::*;
 
+use crate::{
+    stone::Stone,
+    tile::{TileAssets, TileFill, TileType, tile, update_tile_hover_material},
+};
+
 /// Component for the hex grid entity.
 /// Tiles are spawned as children of this entity.
 #[derive(Component, Clone)]
@@ -115,11 +120,88 @@ pub fn world_to_hex(world_pos: Vec2, hex_grid: &HexGrid) -> Option<HexCoordinate
     })
 }
 
-/// Creates a bundle for spawning a hex grid entity
-pub fn hex_grid(hex_radius: f32, cols: i32, rows: i32) -> impl Bundle {
-    (
-        Visibility::Visible,
-        Transform::from_xyz(0., 0., 0.),
-        HexGrid::new(hex_radius, cols, rows),
-    )
+pub fn spawn_hex_grid(commands: &mut Commands, grid: &HexGrid, tile_assets: &TileAssets) -> Entity {
+    let mut tile_entities = Vec::new();
+
+    for q in 0..grid.cols {
+        for r in 0..grid.rows {
+            let world_pos = hex_to_world(&HexCoordinate { q, r }, grid);
+            let tile_type = if q == 0 || q == grid.cols - 1 || r == 0 || r == grid.rows - 1 {
+                TileType::Wall
+            } else if q == 8 && r == 4 {
+                TileType::Goal
+            } else {
+                TileType::SlowDown
+            };
+            let tile_id =
+                commands
+                    .spawn(tile(tile_type, world_pos, q, r, tile_assets))
+                    .observe(
+                        |click: On<Pointer<Click>>,
+                         camera: Single<(&Camera, &GlobalTransform)>,
+                         grid: Single<&HexGrid>,
+                         mut stone: Single<&mut Transform, With<Stone>>| {
+                            let Ok(world_pos) = camera
+                                .0
+                                .viewport_to_world_2d(camera.1, click.pointer_location.position)
+                            else {
+                                return;
+                            };
+                            let Some(hex_coord) = world_to_hex(world_pos, *grid) else {
+                                return;
+                            };
+                            stone.translation = hex_to_world(&hex_coord, *grid).extend(3.0);
+                        },
+                    )
+                    .observe(
+                        |over: On<Pointer<Over>>,
+                         tile_type: Query<&TileType>,
+                         children: Query<&Children>,
+                         tile_assets: Res<TileAssets>,
+                         mut fill_query: Query<
+                            &mut MeshMaterial2d<ColorMaterial>,
+                            With<TileFill>,
+                        >| {
+                            update_tile_hover_material(
+                                over.entity,
+                                true,
+                                &tile_type,
+                                &children,
+                                &tile_assets,
+                                &mut fill_query,
+                            );
+                        },
+                    )
+                    .observe(
+                        |out: On<Pointer<Out>>,
+                         tile_type: Query<&TileType>,
+                         children: Query<&Children>,
+                         tile_assets: Res<TileAssets>,
+                         mut fill_query: Query<
+                            &mut MeshMaterial2d<ColorMaterial>,
+                            With<TileFill>,
+                        >| {
+                            update_tile_hover_material(
+                                out.entity,
+                                false,
+                                &tile_type,
+                                &children,
+                                &tile_assets,
+                                &mut fill_query,
+                            );
+                        },
+                    )
+                    .id();
+            tile_entities.push(tile_id);
+        }
+    }
+
+    commands
+        .spawn((
+            Visibility::Visible,
+            Transform::from_xyz(0., 0., 0.),
+            grid.clone(),
+        ))
+        .add_children(&tile_entities)
+        .id()
 }
