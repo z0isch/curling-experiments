@@ -6,12 +6,12 @@ use crate::intersection;
 use crate::tile::{TileType, compute_tile_effects};
 
 #[derive(Component, Clone)]
-pub struct Stone;
+pub struct Stone {
+    pub radius: f32,
+}
 
 #[derive(Component, Clone)]
 pub struct Velocity(pub Vec2);
-
-pub const STONE_RADIUS: f32 = 10.0;
 
 /// Returns a stone bundle at the given hex coordinate with the specified velocity
 pub fn stone(
@@ -20,12 +20,13 @@ pub fn stone(
     grid: &HexGrid,
     hex_coord: HexCoordinate,
     velocity: Vec2,
+    radius: f32,
 ) -> impl Bundle {
     let black_material = materials.add(Color::BLACK);
-    let stone_mesh = meshes.add(Circle::new(STONE_RADIUS));
+    let stone_mesh = meshes.add(Circle::new(radius));
     let stone_world_pos = hex_to_world(&hex_coord, grid);
     (
-        Stone,
+        Stone { radius },
         Velocity(velocity),
         Mesh2d(stone_mesh),
         MeshMaterial2d(black_material),
@@ -34,35 +35,35 @@ pub fn stone(
 }
 
 pub fn update_stone_position(
-    mut stone: Single<(&Velocity, &mut Transform), With<Stone>>,
+    mut stone: Single<(&Stone, &Velocity, &mut Transform)>,
     tiles: Query<(&TileType, &Transform), Without<Stone>>,
     time: Res<Time>,
     grid: Single<&HexGrid>,
 ) {
     // If velocity is zero and on the goal tile, center it in the hex
-    if stone.0.0.length_squared() <= 1.
+    if stone.1.0.length_squared() <= 1.
         && tiles.iter().any(|(tile_type, transform)| {
             tile_type == &TileType::Goal
                 && intersection::circle_hexagon_overlap_ratio(
-                    stone.1.translation.truncate(),
-                    STONE_RADIUS,
+                    stone.2.translation.truncate(),
+                    stone.0.radius,
                     transform.translation.truncate(),
                     grid.hex_radius,
                     100,
                 ) >= 0.9
         })
     {
-        stone.1.translation = hex_to_world(&HexCoordinate { q: 8, r: 4 }, *grid).extend(3.0);
+        stone.2.translation = hex_to_world(&HexCoordinate { q: 8, r: 4 }, *grid).extend(3.0);
     } else {
-        let delta = stone.0.0 * time.delta_secs();
-        stone.1.translation += delta.extend(0.);
+        let delta = stone.1.0 * time.delta_secs();
+        stone.2.translation += delta.extend(0.);
     }
 }
 
 /// System that modifies stone velocity based on tile types it overlaps with.
 /// Uses circle_hexagon_overlap_ratio as a multiplicative factor for the effect strength.
 pub fn apply_tile_velocity_effects(
-    mut stone: Single<(&mut Velocity, &mut Transform), With<Stone>>,
+    mut stone: Single<(&Stone, &mut Velocity, &mut Transform)>,
     tiles: Query<(&TileType, &Transform), Without<Stone>>,
     grid: Single<&HexGrid>,
     ui_state: Res<UiState>,
@@ -72,13 +73,13 @@ pub fn apply_tile_velocity_effects(
         .iter()
         .map(|(tile_type, transform)| (tile_type, transform.translation.truncate()))
         .collect();
-    *stone.0 = compute_tile_effects(
-        stone.1.translation.truncate(),
-        &stone.0,
+    *stone.1 = compute_tile_effects(
+        stone.2.translation.truncate(),
+        &stone.1,
         &tile_data,
         *grid,
         ui_state.drag_coefficient,
         SAMPLES,
-        STONE_RADIUS,
+        stone.0.radius,
     );
 }

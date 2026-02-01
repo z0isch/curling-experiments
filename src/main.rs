@@ -11,9 +11,7 @@ use bevy_rand::{
     prelude::{ChaCha8Rng, WyRand},
 };
 use hex_grid::{HexCoordinate, HexGrid, spawn_hex_grid};
-use stone::{
-    STONE_RADIUS, Stone, Velocity, apply_tile_velocity_effects, stone, update_stone_position,
-};
+use stone::{Stone, Velocity, apply_tile_velocity_effects, stone, update_stone_position};
 use tile::{TileAssets, TileType, change_tile_type, compute_tile_effects, toggle_tile_coordinates};
 
 use crate::{hex_grid::hex_to_world, tile::update_sweep_count};
@@ -117,6 +115,7 @@ fn setup(
         &grid,
         HexCoordinate { q: 1, r: 1 },
         Vec2::new(stone_velocity_x, stone_velocity_y),
+        10.,
     ));
 
     commands.insert_resource(tile_assets);
@@ -150,7 +149,7 @@ fn draw_move_line(
     tile_assets: Res<TileAssets>,
     grid: Single<&HexGrid>,
     ui_state: Res<UiState>,
-    stone: Single<(&Velocity, &Transform), With<Stone>>,
+    stone: Single<(&Stone, &Velocity, &Transform)>,
     tiles: Query<(&TileType, &Transform), Without<Stone>>,
     lines: Query<Entity, With<StoneMoveLine>>,
 ) {
@@ -166,11 +165,12 @@ fn draw_move_line(
 
     // Simulate physics forward to predict trajectory
     let trajectory = simulate_trajectory(
-        &stone.1.translation.truncate(),
-        stone.0,
+        &stone.2.translation.truncate(),
+        stone.1,
         &tile_data,
         *grid,
         ui_state.drag_coefficient,
+        stone.0.radius,
     );
 
     // Draw line segments between trajectory points
@@ -192,6 +192,7 @@ fn simulate_trajectory(
     tile_data: &[(&TileType, Vec2)],
     hex_grid: &HexGrid,
     drag_coefficient: f32,
+    stone_radius: f32,
 ) -> Vec<Vec2> {
     const SAMPLES: u32 = 20; // Fewer samples for performance in prediction
     const DT: f32 = 1.0 / 60.0; // Simulate at 60fps
@@ -216,7 +217,7 @@ fn simulate_trajectory(
             hex_grid,
             drag_coefficient,
             SAMPLES,
-            STONE_RADIUS,
+            stone_radius,
         );
 
         // Step position forward
