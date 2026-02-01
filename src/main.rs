@@ -1,5 +1,6 @@
 mod hexgrid;
 mod intersection;
+mod tile;
 
 use bevy::prelude::*;
 use bevy::window::WindowResolution;
@@ -9,6 +10,10 @@ use bevy_rand::{
     prelude::{ChaCha8Rng, WyRand},
 };
 use hexgrid::{HexCoordinate, HexGridConfig, hex_to_world, world_to_hex};
+use tile::{
+    TileAssets, TileFill, TileType, change_tile_type, compute_tile_effects, tile,
+    toggle_tile_coordinates, update_tile_hover_material,
+};
 
 fn main() {
     let config = HexGridConfig::new(35.0, 15, 10);
@@ -43,32 +48,6 @@ fn main() {
         .run();
 }
 
-#[derive(Resource)]
-struct TileAssets {
-    hex_mesh: Handle<Mesh>,
-    line_material: Handle<ColorMaterial>,
-    wall: TileTypeAssets,
-    maintain_speed: TileTypeAssets,
-    slow_down: TileTypeAssets,
-    turn_counterclockwise: TileTypeAssets,
-    turn_clockwise: TileTypeAssets,
-    goal: TileTypeAssets,
-}
-
-fn get_tile_type_assets<'a>(
-    tile_type: &TileType,
-    tile_assets: &'a TileAssets,
-) -> &'a TileTypeAssets {
-    match tile_type {
-        TileType::Wall => &tile_assets.wall,
-        TileType::MaintainSpeed => &tile_assets.maintain_speed,
-        TileType::SlowDown => &tile_assets.slow_down,
-        TileType::TurnCounterclockwise => &tile_assets.turn_counterclockwise,
-        TileType::TurnClockwise => &tile_assets.turn_clockwise,
-        TileType::Goal => &tile_assets.goal,
-    }
-}
-
 #[derive(Resource, Clone)]
 struct UiState {
     drag_coefficient: f32,
@@ -93,41 +72,6 @@ fn ui(mut contexts: EguiContexts, mut ui_state: ResMut<UiState>) -> Result {
     });
     Ok(())
 }
-struct TileTypeAssets {
-    material: Handle<ColorMaterial>,
-    hover_material: Handle<ColorMaterial>,
-}
-
-#[derive(Component, PartialEq, Debug)]
-enum TileType {
-    Wall,
-    MaintainSpeed,
-    SlowDown,
-    TurnCounterclockwise,
-    TurnClockwise,
-    Goal,
-}
-
-#[derive(Component)]
-struct TileFill;
-
-#[derive(Component)]
-struct TileCoordinateText;
-
-const COLORS: [Color; 6] = [
-    // #dcf3ff
-    Color::srgb(220.0 / 255.0, 243.0 / 255.0, 1.),
-    // #baf2ef
-    Color::srgb(186.0 / 255.0, 242.0 / 255.0, 239.0 / 255.0),
-    // #a2d2df
-    Color::srgb(162.0 / 255.0, 210.0 / 255.0, 223.0 / 255.0),
-    // #396d7c
-    Color::srgb(57.0 / 255.0, 109.0 / 255.0, 124.0 / 255.0),
-    // #257ca3
-    Color::srgb(37.0 / 255.0, 124.0 / 255.0, 163.0 / 255.0),
-    //rgb(245, 92, 92)
-    Color::srgb(245.0 / 255.0, 92.0 / 255.0, 92.0 / 255.0),
-];
 
 #[derive(Component, Clone)]
 struct Stone;
@@ -136,7 +80,9 @@ struct Stone;
 struct StoneMoveLine;
 
 #[derive(Component, Clone)]
-struct Velocity(Vec2);
+pub struct Velocity(pub Vec2);
+
+const STONE_RADIUS: f32 = 10.0;
 
 fn setup(
     mut commands: Commands,
@@ -153,35 +99,8 @@ fn setup(
     let stone_velocity_x = ui_state.stone_velocity_x;
     let stone_velocity_y = ui_state.stone_velocity_y;
     commands.insert_resource(ui_state);
-    let border_thickness = 1.0;
-    let tile_assets = TileAssets {
-        hex_mesh: meshes.add(RegularPolygon::new(config.hex_radius - border_thickness, 6)),
-        line_material: materials.add(COLORS[5]),
-        wall: TileTypeAssets {
-            material: materials.add(COLORS[3]),
-            hover_material: materials.add(COLORS[3].with_alpha(0.8)),
-        },
-        maintain_speed: TileTypeAssets {
-            material: materials.add(COLORS[0]),
-            hover_material: materials.add(COLORS[0].with_alpha(0.8)),
-        },
-        slow_down: TileTypeAssets {
-            material: materials.add(COLORS[1]),
-            hover_material: materials.add(COLORS[1].with_alpha(0.8)),
-        },
-        turn_counterclockwise: TileTypeAssets {
-            material: materials.add(COLORS[2]),
-            hover_material: materials.add(COLORS[2].with_alpha(0.8)),
-        },
-        turn_clockwise: TileTypeAssets {
-            material: materials.add(COLORS[4]),
-            hover_material: materials.add(COLORS[4].with_alpha(0.8)),
-        },
-        goal: TileTypeAssets {
-            material: materials.add(COLORS[5]),
-            hover_material: materials.add(COLORS[5].with_alpha(0.8)),
-        },
-    };
+
+    let tile_assets = TileAssets::new(&mut meshes, &mut materials, &config);
 
     commands.spawn(Camera2d);
 
@@ -199,38 +118,15 @@ fn setup(
                 TileType::SlowDown
             };
 
-            let assets = get_tile_type_assets(&tile_type, &tile_assets);
-
             commands
-                .spawn((
+                .spawn(tile(
                     tile_type,
-                    Visibility::Visible,
-                    Transform::from_xyz(world_pos.x, world_pos.y, 0.0)
-                        .with_rotation(Quat::from_rotation_z(std::f32::consts::FRAC_PI_6)),
-                    children![
-                        (
-                            Mesh2d(hex_border_mesh.clone()),
-                            MeshMaterial2d(black_material.clone())
-                        ),
-                        (
-                            TileFill,
-                            Mesh2d(tile_assets.hex_mesh.clone()),
-                            MeshMaterial2d(assets.material.clone()),
-                            Transform::from_xyz(0., 0., 1.0),
-                        ),
-                        (
-                            TileCoordinateText,
-                            Visibility::Hidden,
-                            Text2d::new(format!("{},{}", q, r)),
-                            TextFont {
-                                font_size: 10.0,
-                                ..default()
-                            },
-                            TextColor(Color::BLACK),
-                            Transform::from_xyz(0., 0., 2.0)
-                                .with_rotation(Quat::from_rotation_z(-std::f32::consts::FRAC_PI_6)),
-                        )
-                    ],
+                    world_pos,
+                    q,
+                    r,
+                    hex_border_mesh.clone(),
+                    black_material.clone(),
+                    &tile_assets,
                 ))
                 .observe(|click: On<Pointer<Click>>, camera: Single<(&Camera, &GlobalTransform)>, config: Res<HexGridConfig>, mut stone: Single<&mut Transform, With<Stone>>| {
                     let Ok(world_pos) = camera.0.viewport_to_world_2d(camera.1, click.pointer_location.position) else {
@@ -304,65 +200,6 @@ fn restart_game(
     }
 }
 
-fn change_tile_type(
-    window: Single<&Window>,
-    camera: Single<(&Camera, &GlobalTransform)>,
-    config: Res<HexGridConfig>,
-    input: Res<ButtonInput<KeyCode>>,
-    mut tiles: Query<(&mut TileType, &Transform)>,
-) {
-    let Some(cursor_pos) = window.cursor_position() else {
-        return;
-    };
-
-    let Ok(world_pos) = camera.0.viewport_to_world_2d(camera.1, cursor_pos) else {
-        return;
-    };
-    if let Some(hex_coord) = world_to_hex(world_pos, &config) {
-        let Some((mut tile_type, _)) = tiles.iter_mut().find(|(_, transform)| {
-            world_to_hex(transform.translation.truncate(), &config).as_ref() == Some(&hex_coord)
-        }) else {
-            log::error!("Tile not found for stone at position: {:?}", hex_coord);
-            return;
-        };
-        if *tile_type == TileType::Goal {
-            return;
-        }
-        if input.just_pressed(KeyCode::KeyW) {
-            *tile_type = TileType::MaintainSpeed;
-        }
-        if input.just_pressed(KeyCode::KeyA) {
-            *tile_type = TileType::TurnClockwise;
-        }
-        if input.just_pressed(KeyCode::KeyD) {
-            *tile_type = TileType::TurnCounterclockwise;
-        }
-        if input.just_pressed(KeyCode::KeyS) {
-            *tile_type = TileType::SlowDown;
-        }
-    }
-}
-
-// On pressing the `~` key, toggle the visibility of the tile coordinates
-fn toggle_tile_coordinates(
-    mut commands: Commands,
-    input: Res<ButtonInput<KeyCode>>,
-    tiles: Query<(Entity, &Visibility), With<TileCoordinateText>>,
-) {
-    if input.just_pressed(KeyCode::Backquote) {
-        for (entity, visibility) in tiles {
-            commands.entity(entity).remove::<Visibility>();
-            if let Visibility::Visible = visibility {
-                commands.entity(entity).insert(Visibility::Hidden);
-            } else {
-                commands.entity(entity).insert(Visibility::Visible);
-            }
-        }
-    }
-}
-
-const STONE_RADIUS: f32 = 10.0;
-
 fn update_stone_position(
     mut stone: Single<(&Velocity, &mut Transform), With<Stone>>,
     tiles: Query<(&TileType, &Transform), Without<Stone>>,
@@ -409,96 +246,8 @@ fn apply_tile_velocity_effects(
         &config,
         ui_state.drag_coefficient,
         SAMPLES,
+        STONE_RADIUS,
     );
-}
-
-/// Computes the new velocity after applying all tile effects at the given position.
-/// This is the core physics logic shared by both real-time simulation and trajectory prediction.
-fn compute_tile_effects(
-    pos: Vec2,
-    velocity: &Velocity,
-    tiles: &[(&TileType, Vec2)],
-    config: &HexGridConfig,
-    drag_coefficient: f32,
-    samples: u32,
-) -> Velocity {
-    let mut rotation_angle = 0.0_f32;
-    let mut total_drag = 0.0_f32;
-    let mut new_velocity = velocity.clone();
-
-    for &(tile_type, tile_world_pos) in tiles {
-        let overlap_ratio = intersection::circle_hexagon_overlap_ratio(
-            pos,
-            STONE_RADIUS,
-            tile_world_pos,
-            config.hex_radius,
-            samples,
-        );
-
-        if overlap_ratio <= 0.0 {
-            continue;
-        }
-
-        match tile_type {
-            TileType::Wall => {
-                // Immediately reflect velocity off the wall
-                let to_wall = tile_world_pos - pos;
-                if to_wall.length_squared() > 0.0 {
-                    let wall_normal = -to_wall.normalize();
-                    // Reflect: v' = v - 2(v·n)n
-                    let dot = new_velocity.0.dot(wall_normal);
-                    if dot < 0.0 {
-                        // Only reflect if moving toward the wall
-                        new_velocity.0 -= 2.0 * dot * wall_normal;
-                    }
-                }
-            }
-            TileType::MaintainSpeed => {
-                total_drag += drag_coefficient * overlap_ratio;
-            }
-            TileType::SlowDown => {
-                total_drag += drag_coefficient * 2. * overlap_ratio;
-            }
-            TileType::TurnCounterclockwise => {
-                // Rotate velocity counterclockwise, scaled by overlap
-                // ~1 degree per frame at full overlap
-                rotation_angle += 0.017 * overlap_ratio;
-                // Apply drag proportional to overlap
-                total_drag += drag_coefficient * overlap_ratio;
-            }
-            TileType::TurnClockwise => {
-                // Rotate velocity clockwise, scaled by overlap
-                rotation_angle -= 0.017 * overlap_ratio;
-                // Apply drag proportional to overlap
-                total_drag += drag_coefficient * overlap_ratio;
-            }
-            TileType::Goal => {
-                total_drag += drag_coefficient * overlap_ratio;
-                if overlap_ratio >= 0.9 && new_velocity.0.length_squared() < 20. * 20. {
-                    new_velocity.0 = Vec2::ZERO;
-                }
-            }
-        }
-    }
-
-    // Apply accumulated rotation to velocity vector
-    if rotation_angle.abs() > 0.0001 {
-        let cos_angle = rotation_angle.cos();
-        let sin_angle = rotation_angle.sin();
-        new_velocity.0 = Vec2::new(
-            new_velocity.0.x * cos_angle - new_velocity.0.y * sin_angle,
-            new_velocity.0.x * sin_angle + new_velocity.0.y * cos_angle,
-        );
-    }
-
-    // Apply accumulated drag - reduces velocity magnitude while preserving direction
-    if total_drag > 0.0 {
-        // Clamp drag factor to prevent velocity reversal
-        let drag_factor = (1.0 - total_drag).max(0.0);
-        new_velocity.0 *= drag_factor;
-    }
-
-    new_velocity
 }
 
 fn draw_move_line(
@@ -566,8 +315,15 @@ fn simulate_trajectory(
         }
 
         // Apply tile effects using shared physics logic
-        velocity =
-            compute_tile_effects(pos, &velocity, tile_data, config, drag_coefficient, SAMPLES);
+        velocity = compute_tile_effects(
+            pos,
+            &velocity,
+            tile_data,
+            config,
+            drag_coefficient,
+            SAMPLES,
+            STONE_RADIUS,
+        );
 
         // Step position forward
         pos += velocity.0 * DT;
@@ -584,35 +340,4 @@ fn simulate_trajectory(
     }
 
     trajectory
-}
-
-/// Updates the tile fill material for hover effects.
-fn update_tile_hover_material(
-    entity: Entity,
-    hovered: bool,
-    tile_type_query: &Query<&TileType>,
-    children_query: &Query<&Children>,
-    tile_assets: &TileAssets,
-    fill_query: &mut Query<&mut MeshMaterial2d<ColorMaterial>, With<TileFill>>,
-) {
-    let Ok(tile_type) = tile_type_query.get(entity) else {
-        return;
-    };
-    if *tile_type == TileType::Wall || *tile_type == TileType::Goal {
-        return;
-    }
-    let Ok(children) = children_query.get(entity) else {
-        return;
-    };
-    let assets = get_tile_type_assets(tile_type, tile_assets);
-    let material = if hovered {
-        &assets.hover_material
-    } else {
-        &assets.material
-    };
-    for child in children.iter() {
-        if let Ok(mut mesh_material) = fill_query.get_mut(child) {
-            mesh_material.0 = material.clone();
-        }
-    }
 }
