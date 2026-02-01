@@ -21,6 +21,9 @@ use crate::{hex_grid::hex_to_world, tile::update_sweep_count};
 #[derive(Component)]
 struct StoneMoveLine;
 
+#[derive(Resource, Default)]
+pub struct PhysicsPaused(pub bool);
+
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
@@ -40,9 +43,12 @@ fn main() {
         ))
         .add_systems(EguiPrimaryContextPass, ui)
         .add_systems(Startup, setup)
+        .init_resource::<PhysicsPaused>()
         .add_systems(
             FixedUpdate,
-            (update_stone_position, apply_tile_velocity_effects).chain(),
+            (update_stone_position, apply_tile_velocity_effects)
+                .chain()
+                .run_if(|paused: Res<PhysicsPaused>| !paused.0),
         )
         .add_systems(Update, toggle_tile_coordinates)
         .add_systems(
@@ -52,6 +58,7 @@ fn main() {
                 draw_move_line,
                 restart_game,
                 update_sweep_count,
+                toggle_physics_pause,
             ),
         )
         .run();
@@ -113,6 +120,13 @@ fn setup(
     ));
 
     commands.insert_resource(tile_assets);
+}
+
+/// System that toggles physics pause when Space is pressed
+fn toggle_physics_pause(input: Res<ButtonInput<KeyCode>>, mut paused: ResMut<PhysicsPaused>) {
+    if input.just_pressed(KeyCode::Space) {
+        paused.0 = !paused.0;
+    }
 }
 
 /// System that restarts the game when 'R' key is pressed
