@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use crate::hexgrid::{HexGridConfig, world_to_hex};
+use crate::hex_grid::{HexGrid, world_to_hex};
 use crate::intersection;
 
 // ============================================================================
@@ -113,11 +113,14 @@ impl TileAssets {
     pub fn new(
         meshes: &mut ResMut<Assets<Mesh>>,
         materials: &mut ResMut<Assets<ColorMaterial>>,
-        config: &HexGridConfig,
+        hex_grid: &HexGrid,
     ) -> Self {
         let border_thickness = 1.0;
         TileAssets {
-            hex_mesh: meshes.add(RegularPolygon::new(config.hex_radius - border_thickness, 6)),
+            hex_mesh: meshes.add(RegularPolygon::new(
+                hex_grid.hex_radius - border_thickness,
+                6,
+            )),
             line_material: materials.add(COLORS[5]),
             wall: TileTypeAssets {
                 material: materials.add(COLORS[3]),
@@ -166,7 +169,7 @@ impl TileAssets {
 pub fn change_tile_type(
     window: Single<&Window>,
     camera: Single<(&Camera, &GlobalTransform)>,
-    config: Res<HexGridConfig>,
+    grid: Single<&HexGrid>,
     input: Res<ButtonInput<KeyCode>>,
     mut tiles: Query<(&mut TileType, &Transform)>,
 ) {
@@ -177,9 +180,9 @@ pub fn change_tile_type(
     let Ok(world_pos) = camera.0.viewport_to_world_2d(camera.1, cursor_pos) else {
         return;
     };
-    if let Some(hex_coord) = world_to_hex(world_pos, &config) {
+    if let Some(hex_coord) = world_to_hex(world_pos, *grid) {
         let Some((mut tile_type, _)) = tiles.iter_mut().find(|(_, transform)| {
-            world_to_hex(transform.translation.truncate(), &config).as_ref() == Some(&hex_coord)
+            world_to_hex(transform.translation.truncate(), *grid).as_ref() == Some(&hex_coord)
         }) else {
             log::error!("Tile not found for stone at position: {:?}", hex_coord);
             return;
@@ -261,7 +264,7 @@ pub fn compute_tile_effects(
     pos: Vec2,
     velocity: &crate::Velocity,
     tiles: &[(&TileType, Vec2)],
-    config: &HexGridConfig,
+    hex_grid: &HexGrid,
     drag_coefficient: f32,
     samples: u32,
     stone_radius: f32,
@@ -275,7 +278,7 @@ pub fn compute_tile_effects(
             pos,
             stone_radius,
             tile_world_pos,
-            config.hex_radius,
+            hex_grid.hex_radius,
             samples,
         );
 

@@ -1,4 +1,4 @@
-mod hexgrid;
+mod hex_grid;
 mod intersection;
 mod tile;
 
@@ -9,15 +9,13 @@ use bevy_rand::{
     plugin::EntropyPlugin,
     prelude::{ChaCha8Rng, WyRand},
 };
-use hexgrid::{HexCoordinate, HexGridConfig, hex_to_world, world_to_hex};
+use hex_grid::{HexCoordinate, HexGrid, hex_grid, hex_to_world, world_to_hex};
 use tile::{
     TileAssets, TileFill, TileType, change_tile_type, compute_tile_effects, tile,
     toggle_tile_coordinates, update_tile_hover_material,
 };
 
 fn main() {
-    let config = HexGridConfig::new(35.0, 15, 10);
-
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
@@ -34,7 +32,6 @@ fn main() {
             EntropyPlugin::<ChaCha8Rng>::default(),
             EntropyPlugin::<WyRand>::default(),
         ))
-        .insert_resource(config)
         .add_systems(EguiPrimaryContextPass, ui)
         .add_systems(Startup, setup)
         .add_systems(
@@ -88,8 +85,9 @@ fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
-    config: Res<HexGridConfig>,
 ) {
+    let grid = HexGrid::new(35.0, 15, 10);
+
     let initial_velocity = Vec2::from_angle(-std::f32::consts::FRAC_PI_3 / 2.) * 300.0;
     let ui_state = UiState {
         drag_coefficient: 0.002,
@@ -100,17 +98,20 @@ fn setup(
     let stone_velocity_y = ui_state.stone_velocity_y;
     commands.insert_resource(ui_state);
 
-    let tile_assets = TileAssets::new(&mut meshes, &mut materials, &config);
+    let tile_assets = TileAssets::new(&mut meshes, &mut materials, &grid);
 
     commands.spawn(Camera2d);
 
-    let hex_border_mesh = meshes.add(RegularPolygon::new(config.hex_radius, 6));
+    let hex_border_mesh = meshes.add(RegularPolygon::new(grid.hex_radius, 6));
     let black_material = materials.add(Color::BLACK);
 
-    for q in 0..config.cols {
-        for r in 0..config.rows {
-            let world_pos = hex_to_world(&HexCoordinate { q, r }, &config);
-            let tile_type = if q == 0 || q == config.cols - 1 || r == 0 || r == config.rows - 1 {
+    // Build tile entities to spawn as children
+    let mut tile_entities: Vec<Entity> = Vec::new();
+
+    for q in 0..grid.cols {
+        for r in 0..grid.rows {
+            let world_pos = hex_to_world(&HexCoordinate { q, r }, &grid);
+            let tile_type = if q == 0 || q == grid.cols - 1 || r == 0 || r == grid.rows - 1 {
                 TileType::Wall
             } else if q == 8 && r == 4 {
                 TileType::Goal
@@ -118,64 +119,86 @@ fn setup(
                 TileType::SlowDown
             };
 
-            commands
-                .spawn(tile(
-                    tile_type,
-                    world_pos,
-                    q,
-                    r,
-                    hex_border_mesh.clone(),
-                    black_material.clone(),
-                    &tile_assets,
-                ))
-                .observe(|click: On<Pointer<Click>>, camera: Single<(&Camera, &GlobalTransform)>, config: Res<HexGridConfig>, mut stone: Single<&mut Transform, With<Stone>>| {
-                    let Ok(world_pos) = camera.0.viewport_to_world_2d(camera.1, click.pointer_location.position) else {
-                        return;
-                    };
-                    let Some(hex_coord) = world_to_hex(world_pos, &config) else {
-                        return;
-                    };
-                    stone.translation = hex_to_world(&hex_coord, &config).extend(3.0);
-                })
-                .observe(
-                    |over: On<Pointer<Over>>,
-                     tile_type: Query<&TileType>,
-                     children: Query<&Children>,
-                     tile_assets: Res<TileAssets>,
-                     mut fill_query: Query<&mut MeshMaterial2d<ColorMaterial>, With<TileFill>>| {
-                        update_tile_hover_material(
-                            over.entity,
-                            true,
-                            &tile_type,
-                            &children,
-                            &tile_assets,
-                            &mut fill_query,
-                        );
-                    },
-                )
-                .observe(
-                    |out: On<Pointer<Out>>,
-                     tile_type: Query<&TileType>,
-                     children: Query<&Children>,
-                     tile_assets: Res<TileAssets>,
-                     mut fill_query: Query<&mut MeshMaterial2d<ColorMaterial>, With<TileFill>>| {
-                        update_tile_hover_material(
-                            out.entity,
-                            false,
-                            &tile_type,
-                            &children,
-                            &tile_assets,
-                            &mut fill_query,
-                        );
-                    },
-                );
+            let tile_entity =
+                commands
+                    .spawn(tile(
+                        tile_type,
+                        world_pos,
+                        q,
+                        r,
+                        hex_border_mesh.clone(),
+                        black_material.clone(),
+                        &tile_assets,
+                    ))
+                    .observe(
+                        |click: On<Pointer<Click>>,
+                         camera: Single<(&Camera, &GlobalTransform)>,
+                         grid: Single<&HexGrid>,
+                         mut stone: Single<&mut Transform, With<Stone>>| {
+                            let Ok(world_pos) = camera
+                                .0
+                                .viewport_to_world_2d(camera.1, click.pointer_location.position)
+                            else {
+                                return;
+                            };
+                            let Some(hex_coord) = world_to_hex(world_pos, *grid) else {
+                                return;
+                            };
+                            stone.translation = hex_to_world(&hex_coord, *grid).extend(3.0);
+                        },
+                    )
+                    .observe(
+                        |over: On<Pointer<Over>>,
+                         tile_type: Query<&TileType>,
+                         children: Query<&Children>,
+                         tile_assets: Res<TileAssets>,
+                         mut fill_query: Query<
+                            &mut MeshMaterial2d<ColorMaterial>,
+                            With<TileFill>,
+                        >| {
+                            update_tile_hover_material(
+                                over.entity,
+                                true,
+                                &tile_type,
+                                &children,
+                                &tile_assets,
+                                &mut fill_query,
+                            );
+                        },
+                    )
+                    .observe(
+                        |out: On<Pointer<Out>>,
+                         tile_type: Query<&TileType>,
+                         children: Query<&Children>,
+                         tile_assets: Res<TileAssets>,
+                         mut fill_query: Query<
+                            &mut MeshMaterial2d<ColorMaterial>,
+                            With<TileFill>,
+                        >| {
+                            update_tile_hover_material(
+                                out.entity,
+                                false,
+                                &tile_type,
+                                &children,
+                                &tile_assets,
+                                &mut fill_query,
+                            );
+                        },
+                    )
+                    .id();
+            tile_entities.push(tile_entity);
         }
     }
 
     commands.insert_resource(tile_assets);
 
+    // Spawn HexGrid entity and add tiles as children
+    commands
+        .spawn(hex_grid(35.0, 15, 10))
+        .add_children(&tile_entities);
+
     let stone_mesh = meshes.add(Circle::new(STONE_RADIUS));
-    let stone_world_pos = hex_to_world(&HexCoordinate { q: 1, r: 1 }, &config);
+    let stone_world_pos = hex_to_world(&HexCoordinate { q: 1, r: 1 }, &grid);
     commands.spawn((
         Stone,
         Velocity(Vec2::new(stone_velocity_x, stone_velocity_y)),
@@ -188,13 +211,13 @@ fn setup(
 /// System that restarts the game when 'R' key is pressed
 fn restart_game(
     input: Res<ButtonInput<KeyCode>>,
-    config: Res<HexGridConfig>,
+    grid: Single<&HexGrid>,
     ui_state: Res<UiState>,
     mut stone: Single<(&mut Velocity, &mut Transform), With<Stone>>,
 ) {
     if input.just_pressed(KeyCode::KeyR) {
         let initial_hex = HexCoordinate { q: 1, r: 1 };
-        let stone_world_pos = hex_to_world(&initial_hex, &config);
+        let stone_world_pos = hex_to_world(&initial_hex, *grid);
         stone.0.0 = Vec2::new(ui_state.stone_velocity_x, ui_state.stone_velocity_y);
         stone.1.translation = stone_world_pos.extend(3.0);
     }
@@ -204,7 +227,7 @@ fn update_stone_position(
     mut stone: Single<(&Velocity, &mut Transform), With<Stone>>,
     tiles: Query<(&TileType, &Transform), Without<Stone>>,
     time: Res<Time>,
-    config: Res<HexGridConfig>,
+    grid: Single<&HexGrid>,
 ) {
     //If velocity is zero and on the goal tile, center it in the hex
     if stone.0.0.length_squared() <= 1.
@@ -214,12 +237,12 @@ fn update_stone_position(
                     stone.1.translation.truncate(),
                     STONE_RADIUS,
                     transform.translation.truncate(),
-                    config.hex_radius,
+                    grid.hex_radius,
                     100,
                 ) >= 0.9
         })
     {
-        stone.1.translation = hex_to_world(&HexCoordinate { q: 8, r: 4 }, &config).extend(3.0);
+        stone.1.translation = hex_to_world(&HexCoordinate { q: 8, r: 4 }, *grid).extend(3.0);
     } else {
         let delta = stone.0.0 * time.delta_secs();
         stone.1.translation += delta.extend(0.);
@@ -231,7 +254,7 @@ fn update_stone_position(
 fn apply_tile_velocity_effects(
     mut stone: Single<(&mut Velocity, &mut Transform), With<Stone>>,
     tiles: Query<(&TileType, &Transform), Without<Stone>>,
-    config: Res<HexGridConfig>,
+    grid: Single<&HexGrid>,
     ui_state: Res<UiState>,
 ) {
     const SAMPLES: u32 = 100;
@@ -243,7 +266,7 @@ fn apply_tile_velocity_effects(
         stone.1.translation.truncate(),
         &stone.0,
         &tile_data,
-        &config,
+        *grid,
         ui_state.drag_coefficient,
         SAMPLES,
         STONE_RADIUS,
@@ -254,7 +277,7 @@ fn draw_move_line(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     tile_assets: Res<TileAssets>,
-    config: Res<HexGridConfig>,
+    grid: Single<&HexGrid>,
     ui_state: Res<UiState>,
     stone: Single<(&Velocity, &Transform), With<Stone>>,
     tiles: Query<(&TileType, &Transform), Without<Stone>>,
@@ -275,7 +298,7 @@ fn draw_move_line(
         &stone.1.translation.truncate(),
         stone.0,
         &tile_data,
-        &config,
+        *grid,
         ui_state.drag_coefficient,
     );
 
@@ -296,7 +319,7 @@ fn simulate_trajectory(
     position: &Vec2,
     velocity: &Velocity,
     tile_data: &[(&TileType, Vec2)],
-    config: &HexGridConfig,
+    hex_grid: &HexGrid,
     drag_coefficient: f32,
 ) -> Vec<Vec2> {
     const SAMPLES: u32 = 20; // Fewer samples for performance in prediction
@@ -319,7 +342,7 @@ fn simulate_trajectory(
             pos,
             &velocity,
             tile_data,
-            config,
+            hex_grid,
             drag_coefficient,
             SAMPLES,
             STONE_RADIUS,
