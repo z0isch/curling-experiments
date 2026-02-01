@@ -45,6 +45,30 @@ pub fn tile(
                 TextColor(Color::BLACK),
                 Transform::from_xyz(0., 0., 2.0)
                     .with_rotation(Quat::from_rotation_z(-std::f32::consts::FRAC_PI_6)),
+            ),
+            (
+                TileCoordinateText,
+                TileDraggingText,
+                Text2d::new(""),
+                TextFont {
+                    font_size: 10.0,
+                    ..default()
+                },
+                TextColor(Color::BLACK),
+                Transform::from_xyz(0., 0., 2.0)
+                    .with_rotation(Quat::from_rotation_z(-std::f32::consts::FRAC_PI_6)),
+            ),
+            (
+                TileCoordinateText,
+                Visibility::Hidden,
+                Text2d::new(format!("{},{}", q, r)),
+                TextFont {
+                    font_size: 10.0,
+                    ..default()
+                },
+                TextColor(Color::BLACK),
+                Transform::from_xyz(0., 0., 2.0)
+                    .with_rotation(Quat::from_rotation_z(-std::f32::consts::FRAC_PI_6)),
             )
         ],
     )
@@ -88,6 +112,15 @@ pub struct TileFill;
 
 #[derive(Component)]
 pub struct TileCoordinateText;
+
+#[derive(Component)]
+pub struct TileDraggingText;
+
+#[derive(Component, Debug)]
+pub struct TileDragging {
+    pub last_position: Vec2,
+    pub distance_dragged: f32,
+}
 
 // ============================================================================
 // Resources
@@ -259,6 +292,99 @@ pub fn update_tile_hover_material(
     }
 }
 
+/// Updates the tile dragging text to display the distance dragged (sweep count)
+pub fn update_sweep_count(
+    tiles: Query<(&TileDragging, &Children)>,
+    mut text_query: Query<&mut Text2d, With<TileDraggingText>>,
+) {
+    for (tile_dragging, children) in &tiles {
+        for child in children.iter() {
+            if let Ok(mut text) = text_query.get_mut(child) {
+                text.0 = format!("{:.0}", tile_dragging.distance_dragged);
+            }
+        }
+    }
+}
+
+//=============================================================================
+// Observers
+//=============================================================================
+
+pub fn on_pointer_over(
+    over: On<Pointer<Over>>,
+    tile_type: Query<&TileType>,
+    children: Query<&Children>,
+    tile_assets: Res<TileAssets>,
+    mut fill_query: Query<&mut MeshMaterial2d<ColorMaterial>, With<TileFill>>,
+) {
+    update_tile_hover_material(
+        over.entity,
+        true,
+        &tile_type,
+        &children,
+        &tile_assets,
+        &mut fill_query,
+    );
+}
+
+pub fn on_pointer_out(
+    out: On<Pointer<Out>>,
+    tile_type: Query<&TileType>,
+    children: Query<&Children>,
+    tile_assets: Res<TileAssets>,
+    mut fill_query: Query<&mut MeshMaterial2d<ColorMaterial>, With<TileFill>>,
+) {
+    update_tile_hover_material(
+        out.entity,
+        false,
+        &tile_type,
+        &children,
+        &tile_assets,
+        &mut fill_query,
+    );
+}
+
+pub fn on_tile_drag_enter(
+    drag_enter: On<Pointer<DragEnter>>,
+    mut commands: Commands,
+    mut tile_dragging_q: Query<Option<&mut TileDragging>>,
+) {
+    if let Ok(Some(mut tile_dragging)) = tile_dragging_q.get_mut(drag_enter.entity) {
+        tile_dragging.last_position = drag_enter.pointer_location.position;
+    } else {
+        commands.entity(drag_enter.entity).insert(TileDragging {
+            last_position: drag_enter.pointer_location.position,
+            distance_dragged: 0.0,
+        });
+    }
+}
+
+pub fn on_tile_dragging(
+    drag: On<Pointer<Drag>>,
+    window: Single<&Window>,
+    camera: Single<(&Camera, &GlobalTransform)>,
+    grid: Single<&HexGrid>,
+    mut tiles: Query<(&mut TileDragging, &Transform)>,
+) {
+    let Some(cursor_pos) = window.cursor_position() else {
+        return;
+    };
+
+    let Ok(world_pos) = camera.0.viewport_to_world_2d(camera.1, cursor_pos) else {
+        return;
+    };
+    if let Some(hex_coord) = world_to_hex(world_pos, *grid) {
+        let Some((mut tile_dragging, _)) = tiles.iter_mut().find(|(_, transform)| {
+            world_to_hex(transform.translation.truncate(), *grid).as_ref() == Some(&hex_coord)
+        }) else {
+            log::error!("Tile not found for stone at position: {:?}", hex_coord);
+            return;
+        };
+        tile_dragging.distance_dragged +=
+            (drag.pointer_location.position - tile_dragging.last_position).length();
+        tile_dragging.last_position = drag.pointer_location.position;
+    }
+}
 // ============================================================================
 // Physics
 // ============================================================================

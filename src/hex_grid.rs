@@ -1,8 +1,8 @@
 use bevy::prelude::*;
 
-use crate::{
-    stone::Stone,
-    tile::{TileAssets, TileFill, TileType, tile, update_tile_hover_material},
+use crate::tile::{
+    TileAssets, TileType, on_pointer_out, on_pointer_over, on_tile_drag_enter, on_tile_dragging,
+    tile,
 };
 
 /// Component for the hex grid entity.
@@ -133,65 +133,13 @@ pub fn spawn_hex_grid(commands: &mut Commands, grid: &HexGrid, tile_assets: &Til
             } else {
                 TileType::SlowDown
             };
-            let tile_id =
-                commands
-                    .spawn(tile(tile_type, world_pos, q, r, tile_assets))
-                    .observe(
-                        |click: On<Pointer<Click>>,
-                         camera: Single<(&Camera, &GlobalTransform)>,
-                         grid: Single<&HexGrid>,
-                         mut stone: Single<&mut Transform, With<Stone>>| {
-                            let Ok(world_pos) = camera
-                                .0
-                                .viewport_to_world_2d(camera.1, click.pointer_location.position)
-                            else {
-                                return;
-                            };
-                            let Some(hex_coord) = world_to_hex(world_pos, *grid) else {
-                                return;
-                            };
-                            stone.translation = hex_to_world(&hex_coord, *grid).extend(3.0);
-                        },
-                    )
-                    .observe(
-                        |over: On<Pointer<Over>>,
-                         tile_type: Query<&TileType>,
-                         children: Query<&Children>,
-                         tile_assets: Res<TileAssets>,
-                         mut fill_query: Query<
-                            &mut MeshMaterial2d<ColorMaterial>,
-                            With<TileFill>,
-                        >| {
-                            update_tile_hover_material(
-                                over.entity,
-                                true,
-                                &tile_type,
-                                &children,
-                                &tile_assets,
-                                &mut fill_query,
-                            );
-                        },
-                    )
-                    .observe(
-                        |out: On<Pointer<Out>>,
-                         tile_type: Query<&TileType>,
-                         children: Query<&Children>,
-                         tile_assets: Res<TileAssets>,
-                         mut fill_query: Query<
-                            &mut MeshMaterial2d<ColorMaterial>,
-                            With<TileFill>,
-                        >| {
-                            update_tile_hover_material(
-                                out.entity,
-                                false,
-                                &tile_type,
-                                &children,
-                                &tile_assets,
-                                &mut fill_query,
-                            );
-                        },
-                    )
-                    .id();
+            let tile_id = commands
+                .spawn(tile(tile_type, world_pos, q, r, tile_assets))
+                .observe(on_pointer_over)
+                .observe(on_pointer_out)
+                .observe(on_tile_dragging)
+                .observe(on_tile_drag_enter)
+                .id();
             tile_entities.push(tile_id);
         }
     }

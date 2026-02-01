@@ -16,7 +16,7 @@ use stone::{
 };
 use tile::{TileAssets, TileType, change_tile_type, compute_tile_effects, toggle_tile_coordinates};
 
-use crate::hex_grid::hex_to_world;
+use crate::{hex_grid::hex_to_world, tile::update_sweep_count};
 
 #[derive(Component)]
 struct StoneMoveLine;
@@ -45,7 +45,15 @@ fn main() {
             (update_stone_position, apply_tile_velocity_effects).chain(),
         )
         .add_systems(Update, toggle_tile_coordinates)
-        .add_systems(Update, (change_tile_type, draw_move_line, restart_game))
+        .add_systems(
+            Update,
+            (
+                change_tile_type,
+                draw_move_line,
+                restart_game,
+                update_sweep_count,
+            ),
+        )
         .run();
 }
 
