@@ -12,10 +12,11 @@ use bevy_rand::{
 };
 use hex_grid::{HexCoordinate, HexGrid, spawn_hex_grid};
 use stone::{
-    STONE_RADIUS, Stone, Velocity, apply_tile_velocity_effects, restart_game, stone,
-    update_stone_position,
+    STONE_RADIUS, Stone, Velocity, apply_tile_velocity_effects, stone, update_stone_position,
 };
 use tile::{TileAssets, TileType, change_tile_type, compute_tile_effects, toggle_tile_coordinates};
+
+use crate::hex_grid::hex_to_world;
 
 #[derive(Component)]
 struct StoneMoveLine;
@@ -104,6 +105,21 @@ fn setup(
     ));
 
     commands.insert_resource(tile_assets);
+}
+
+/// System that restarts the game when 'R' key is pressed
+pub fn restart_game(
+    input: Res<ButtonInput<KeyCode>>,
+    grid: Single<&HexGrid>,
+    ui_state: Res<UiState>,
+    mut stone: Single<(&mut Velocity, &mut Transform), With<Stone>>,
+) {
+    if input.just_pressed(KeyCode::KeyR) {
+        let initial_hex = HexCoordinate { q: 1, r: 1 };
+        let stone_world_pos = hex_to_world(&initial_hex, *grid);
+        stone.0.0 = Vec2::new(ui_state.stone_velocity_x, ui_state.stone_velocity_y);
+        stone.1.translation = stone_world_pos.extend(3.0);
+    }
 }
 
 fn draw_move_line(

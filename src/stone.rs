@@ -33,21 +33,6 @@ pub fn stone(
     )
 }
 
-/// System that restarts the game when 'R' key is pressed
-pub fn restart_game(
-    input: Res<ButtonInput<KeyCode>>,
-    grid: Single<&HexGrid>,
-    ui_state: Res<UiState>,
-    mut stone: Single<(&mut Velocity, &mut Transform), With<Stone>>,
-) {
-    if input.just_pressed(KeyCode::KeyR) {
-        let initial_hex = HexCoordinate { q: 1, r: 1 };
-        let stone_world_pos = hex_to_world(&initial_hex, *grid);
-        stone.0.0 = Vec2::new(ui_state.stone_velocity_x, ui_state.stone_velocity_y);
-        stone.1.translation = stone_world_pos.extend(3.0);
-    }
-}
-
 pub fn update_stone_position(
     mut stone: Single<(&Velocity, &mut Transform), With<Stone>>,
     tiles: Query<(&TileType, &Transform), Without<Stone>>,
