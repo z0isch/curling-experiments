@@ -54,6 +54,7 @@ struct TileAssets {
     slow_down: TileTypeAssets,
     turn_counterclockwise: TileTypeAssets,
     turn_clockwise: TileTypeAssets,
+    goal: TileTypeAssets,
 }
 
 fn get_tile_type_assets<'a>(
@@ -66,6 +67,7 @@ fn get_tile_type_assets<'a>(
         TileType::SlowDown => &tile_assets.slow_down,
         TileType::TurnCounterclockwise => &tile_assets.turn_counterclockwise,
         TileType::TurnClockwise => &tile_assets.turn_clockwise,
+        TileType::Goal => &tile_assets.goal,
     }
 }
 
@@ -81,6 +83,7 @@ enum TileType {
     SlowDown,
     TurnCounterclockwise,
     TurnClockwise,
+    Goal,
 }
 
 #[derive(Component)]
@@ -143,6 +146,10 @@ fn setup(
             material: materials.add(COLORS[4]),
             hover_material: materials.add(COLORS[4].with_alpha(0.8)),
         },
+        goal: TileTypeAssets {
+            material: materials.add(COLORS[5]),
+            hover_material: materials.add(COLORS[5].with_alpha(0.8)),
+        },
     };
 
     commands.spawn(Camera2d);
@@ -155,6 +162,8 @@ fn setup(
             let world_pos = hex_to_world(&HexCoordinate { q, r }, &config);
             let tile_type = if q == 0 || q == config.cols - 1 || r == 0 || r == config.rows - 1 {
                 TileType::Wall
+            } else if q == 8 && r == 4 {
+                TileType::Goal
             } else {
                 TileType::SlowDown
             };
@@ -201,7 +210,8 @@ fn setup(
 
     commands.spawn((
         Stone,
-        Velocity(Vec2::new(50.0, 0.0)),
+        // Velocity down-right direction (-60 degrees / -π/3 radians)
+        Velocity(Vec2::from_angle(-std::f32::consts::FRAC_PI_3 / 2.) * 300.0),
         Mesh2d(meshes.add(Circle::new(10.0))),
         MeshMaterial2d(black_material.clone()),
         Transform::from_xyz(stone_world_pos.x, stone_world_pos.y, 3.0),
@@ -277,7 +287,9 @@ fn change_tile_type(
             log::error!("Tile not found for stone at position: {:?}", hex_coord);
             return;
         };
-
+        if *tile_type == TileType::Goal {
+            return;
+        }
         if input.just_pressed(KeyCode::KeyW) {
             *tile_type = TileType::MaintainSpeed;
         }
@@ -337,10 +349,28 @@ const STONE_RADIUS: f32 = 10.0;
 
 fn update_stone_position(
     mut stone: Single<(&Velocity, &mut Transform), With<Stone>>,
+    tiles: Query<(&TileType, &Transform), Without<Stone>>,
     time: Res<Time>,
+    config: Res<HexGridConfig>,
 ) {
-    let delta = stone.0.0 * time.delta_secs();
-    stone.1.translation += delta.extend(0.);
+    //If velocity is zero and on the goal tile, center it in the hex
+    if stone.0.0.length_squared() <= 1.
+        && tiles.iter().any(|(tile_type, transform)| {
+            tile_type == &TileType::Goal
+                && intersection::circle_hexagon_overlap_ratio(
+                    stone.1.translation.truncate(),
+                    STONE_RADIUS,
+                    transform.translation.truncate(),
+                    config.hex_radius,
+                    100,
+                ) >= 0.9
+        })
+    {
+        stone.1.translation = hex_to_world(&HexCoordinate { q: 8, r: 4 }, &config).extend(3.0);
+    } else {
+        let delta = stone.0.0 * time.delta_secs();
+        stone.1.translation += delta.extend(0.);
+    }
 }
 
 /// System that modifies stone velocity based on tile types it overlaps with.
@@ -358,21 +388,21 @@ fn apply_tile_velocity_effects(
     *stone.0 = compute_tile_effects(
         stone.1.translation.truncate(),
         &stone.0,
-        tile_data.iter().map(|(tt, pos)| (*tt, *pos)),
+        &tile_data,
         &config,
         SAMPLES,
     );
 }
 
 /// Drag coefficient - how much velocity is reduced per frame at full overlap
-const DRAG_COEFFICIENT: f32 = 0.001;
+const DRAG_COEFFICIENT: f32 = 0.002;
 
 /// Computes the new velocity after applying all tile effects at the given position.
 /// This is the core physics logic shared by both real-time simulation and trajectory prediction.
-fn compute_tile_effects<'a>(
+fn compute_tile_effects(
     pos: Vec2,
     velocity: &Velocity,
-    tiles: impl Iterator<Item = (&'a TileType, Vec2)>,
+    tiles: &[(&TileType, Vec2)],
     config: &HexGridConfig,
     samples: u32,
 ) -> Velocity {
@@ -380,7 +410,7 @@ fn compute_tile_effects<'a>(
     let mut total_drag = 0.0_f32;
     let mut new_velocity = velocity.clone();
 
-    for (tile_type, tile_world_pos) in tiles {
+    for &(tile_type, tile_world_pos) in tiles {
         let overlap_ratio = intersection::circle_hexagon_overlap_ratio(
             pos,
             STONE_RADIUS,
@@ -425,6 +455,12 @@ fn compute_tile_effects<'a>(
                 rotation_angle -= 0.017 * overlap_ratio;
                 // Apply drag proportional to overlap
                 total_drag += DRAG_COEFFICIENT * overlap_ratio;
+            }
+            TileType::Goal => {
+                total_drag += DRAG_COEFFICIENT * overlap_ratio;
+                if overlap_ratio >= 0.9 && new_velocity.0.length_squared() < 20. * 20. {
+                    new_velocity.0 = Vec2::ZERO;
+                }
             }
         }
     }
@@ -511,13 +547,7 @@ fn simulate_trajectory(
         }
 
         // Apply tile effects using shared physics logic
-        velocity = compute_tile_effects(
-            pos,
-            &velocity,
-            tile_data.iter().map(|(tt, p)| (*tt, *p)),
-            config,
-            SAMPLES,
-        );
+        velocity = compute_tile_effects(pos, &velocity, tile_data, config, SAMPLES);
 
         // Step position forward
         pos += velocity.0 * DT;
