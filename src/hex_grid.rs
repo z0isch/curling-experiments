@@ -127,8 +127,13 @@ impl Display for Facing {
 pub struct Level {
     pub grid: HashMap<HexCoordinate, TileType>,
     pub goal_coordinate: HexCoordinate,
+    pub stone_configs: Vec<StoneConfig>,
+}
+
+#[derive(Clone, PartialEq, Debug)]
+pub struct StoneConfig {
+    pub velocity_magnitude: f32,
     pub start_coordinate: HexCoordinate,
-    pub stone_velocity_magnitude: f32,
     pub facing: Facing,
 }
 
@@ -322,14 +327,20 @@ pub fn get_level() -> Level {
         (goal_coordinate.clone(), TileType::Goal),
     ]);
 
-    let stone_velocity_magnitude = 250.0;
-    let facing = Facing::DownRight;
-
     Level {
         grid,
-        goal_coordinate,
-        start_coordinate,
-        stone_velocity_magnitude,
-        facing,
+        goal_coordinate: goal_coordinate.clone(),
+        stone_configs: vec![
+            StoneConfig {
+                velocity_magnitude: 250.0,
+                start_coordinate,
+                facing: Facing::Up,
+            },
+            StoneConfig {
+                velocity_magnitude: 0.0,
+                start_coordinate: goal_coordinate,
+                facing: Facing::DownRight,
+            },
+        ],
     }
 }
