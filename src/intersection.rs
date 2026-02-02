@@ -35,7 +35,7 @@ pub fn circle_hexagon_intersection_area(
 }
 
 /// Fast AABB intersection check between a circle and a flat-top hexagon.
-fn aabb_intersects(
+pub fn aabb_intersects(
     circle_center: Vec2,
     circle_radius: f32,
     hex_center: Vec2,

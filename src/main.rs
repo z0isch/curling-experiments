@@ -78,14 +78,14 @@ fn ui(mut contexts: EguiContexts, mut ui_state: ResMut<UiState>) -> Result {
     egui::Window::new("").show(contexts.ctx_mut()?, |ui| {
         ui.add(egui::Label::new("R to restart"));
         ui.add(egui::Label::new("Space to pause/resume"));
-        ui.add(egui::Slider::new(&mut ui_state.hex_radius, 20.0..=80.0).text("Hex Radius"));
+        ui.add(egui::Slider::new(&mut ui_state.hex_radius, 10.0..=80.0).text("Hex Radius"));
         ui.add(egui::Slider::new(&mut ui_state.stone_radius, 10.0..=30.0).text("Stone Radius"));
         ui.add(
             egui::Slider::new(&mut ui_state.min_sweep_distance, 0.0..=200.0)
                 .text("Min Sweep Distance"),
         );
         ui.add(
-            egui::Slider::new(&mut ui_state.drag_coefficient, 0.001..=0.01)
+            egui::Slider::new(&mut ui_state.drag_coefficient, 0.0001..=0.001)
                 .text("Drag Coefficient"),
         );
         ui.add(
@@ -117,12 +117,12 @@ fn setup(
     let initial_velocity =
         get_initial_stone_velocity(&level.facing, &level.stone_velocity_magnitude);
     let ui_state = UiState {
-        drag_coefficient: 0.01,
+        drag_coefficient: 0.0005,
         stone_velocity_magnitude: level.stone_velocity_magnitude,
         stone_facing: level.facing.clone(),
-        min_sweep_distance: 175.0,
-        hex_radius: 70.0,
-        stone_radius: 25.0,
+        min_sweep_distance: 2.0,
+        hex_radius: 15.0,
+        stone_radius: 20.0,
     };
 
     commands.spawn(Camera2d);
@@ -193,6 +193,7 @@ fn draw_move_line(
     stone: Single<(&Stone, &Velocity, &Transform)>,
     tiles: Query<(&TileType, &Transform), Without<Stone>>,
     lines: Query<Entity, With<StoneMoveLine>>,
+    fixed_time: Res<Time<Fixed>>,
 ) {
     for l in &lines {
         commands.entity(l).despawn();
@@ -205,6 +206,7 @@ fn draw_move_line(
         .collect();
 
     // Simulate physics forward to predict trajectory
+    // Use the same fixed timestep as the FixedUpdate schedule
     let trajectory = simulate_trajectory(
         &stone.2.translation.truncate(),
         stone.1,
@@ -212,6 +214,7 @@ fn draw_move_line(
         *grid,
         ui_state.drag_coefficient,
         stone.0.radius,
+        fixed_time.delta_secs(),
     );
 
     // Draw line segments between trajectory points
@@ -226,7 +229,11 @@ fn draw_move_line(
     }
 }
 
-/// Simulates the stone's trajectory by forward-integrating physics
+/// Simulates the stone's trajectory by forward-integrating physics.
+///
+/// **Important**: The order of operations must match the FixedUpdate system chain:
+/// 1. update_stone_position (move)
+/// 2. apply_tile_velocity_effects (update velocity)
 fn simulate_trajectory(
     position: &Vec2,
     velocity: &Velocity,
@@ -234,40 +241,32 @@ fn simulate_trajectory(
     hex_grid: &HexGrid,
     drag_coefficient: f32,
     stone_radius: f32,
+    fixed_dt: f32,
 ) -> Vec<Vec2> {
-    const SAMPLES: u32 = 20; // Fewer samples for performance in prediction
-    const DT: f32 = 1.0 / 60.0; // Simulate at 60fps
-    const MAX_STEPS: usize = 600; // ~10 seconds of prediction
     const MIN_VELOCITY: f32 = 1.0; // Stop when velocity is very low
-    const SAMPLE_INTERVAL: usize = 10; // Only record every Nth position to reduce line segments
 
     let mut trajectory = vec![*position];
     let mut pos = *position;
     let mut velocity = velocity.clone();
 
-    for step in 0..MAX_STEPS {
+    loop {
         if velocity.0.length_squared() < MIN_VELOCITY * MIN_VELOCITY {
             break;
         }
 
-        // Apply tile effects using shared physics logic
+        // Step 1: Move position first (matches update_stone_position)
+        pos += velocity.0 * fixed_dt;
+        trajectory.push(pos);
+
+        // Step 2: Then update velocity based on new position (matches apply_tile_velocity_effects)
         velocity = compute_tile_effects(
             pos,
             &velocity,
             tile_data,
             hex_grid,
             drag_coefficient,
-            SAMPLES,
             stone_radius,
         );
-
-        // Step position forward
-        pos += velocity.0 * DT;
-
-        // Only record every Nth position to reduce line segments
-        if step % SAMPLE_INTERVAL == 0 {
-            trajectory.push(pos);
-        }
     }
 
     // Always include the final position

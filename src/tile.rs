@@ -411,75 +411,66 @@ pub fn compute_tile_effects(
     tiles: &[(&TileType, Vec2)],
     hex_grid: &HexGrid,
     drag_coefficient: f32,
-    samples: u32,
     stone_radius: f32,
 ) -> crate::stone::Velocity {
-    let mut rotation_angle = 0.0_f32;
-    let mut total_drag = 0.0_f32;
-    let mut new_velocity = velocity.clone();
+    let mut new_velocity = velocity.0;
+
+    let mut rotation_angle: f32 = 0.0;
+    let mut total_drag: f32 = 0.0;
+
+    // Accumulated wall normal for deterministic reflection
+    let mut combined_wall_normal = Vec2::ZERO;
 
     for &(tile_type, tile_world_pos) in tiles {
-        let overlap_ratio = intersection::circle_hexagon_overlap_ratio(
-            pos,
-            stone_radius,
-            tile_world_pos,
-            hex_grid.hex_radius,
-            samples,
-        );
-
-        if overlap_ratio <= 0.0 {
+        if !intersection::aabb_intersects(pos, stone_radius, tile_world_pos, hex_grid.hex_radius) {
             continue;
         }
 
         match tile_type {
             TileType::Wall => {
-                // Immediately reflect velocity off the wall
+                // Accumulate wall influence instead of reflecting immediately
+                // This ensures deterministic behavior when touching multiple walls
                 let to_wall = tile_world_pos - pos;
-                if to_wall.length_squared() > 0.0 {
-                    let wall_normal = -to_wall.normalize();
-                    // Reflect: v' = v - 2(v·n)n
-                    let dot = new_velocity.0.dot(wall_normal);
-                    if dot < 0.0 {
-                        // Only reflect if moving toward the wall
-                        new_velocity.0 -= 2.0 * dot * wall_normal;
-                    }
-                }
+                let len_sq = to_wall.length_squared();
+                // Weight by inverse distance squared (closer walls have more influence)
+                let inv_dist = 1.0 / len_sq.sqrt();
+                combined_wall_normal += -to_wall * inv_dist * inv_dist;
             }
             TileType::MaintainSpeed => {
-                total_drag += drag_coefficient * overlap_ratio;
+                total_drag += drag_coefficient;
             }
             TileType::SlowDown => {
-                total_drag += drag_coefficient * 2. * overlap_ratio;
+                total_drag += drag_coefficient * 10.0;
             }
             TileType::TurnCounterclockwise => {
-                // Rotate velocity counterclockwise, scaled by overlap
-                // ~1 degree per frame at full overlap
-                rotation_angle += 0.017 * overlap_ratio;
-                // Apply drag proportional to overlap
-                total_drag += drag_coefficient * overlap_ratio;
+                rotation_angle += 0.017; // ~1 degree per frame
+                total_drag += drag_coefficient;
             }
             TileType::TurnClockwise => {
-                // Rotate velocity clockwise, scaled by overlap
-                rotation_angle -= 0.017 * overlap_ratio;
-                // Apply drag proportional to overlap
-                total_drag += drag_coefficient * overlap_ratio;
+                rotation_angle -= 0.017; // clockwise = negative
+                total_drag += drag_coefficient;
             }
             TileType::Goal => {
-                total_drag += drag_coefficient * overlap_ratio;
-                if overlap_ratio >= 0.9 && new_velocity.0.length_squared() < 20. * 20. {
-                    new_velocity.0 = Vec2::ZERO;
-                }
+                total_drag += drag_coefficient;
             }
         }
     }
 
+    // Apply single deterministic wall reflection from combined normal
+    let wall_len_sq = combined_wall_normal.length_squared();
+    let wall_normal = combined_wall_normal / wall_len_sq.sqrt();
+    let dot = new_velocity.dot(wall_normal);
+    if dot < 0.0 {
+        // Only reflect if moving toward the wall
+        new_velocity -= 2.0 * dot * wall_normal;
+    }
+
     // Apply accumulated rotation to velocity vector
-    if rotation_angle.abs() > 0.0001 {
-        let cos_angle = rotation_angle.cos();
-        let sin_angle = rotation_angle.sin();
-        new_velocity.0 = Vec2::new(
-            new_velocity.0.x * cos_angle - new_velocity.0.y * sin_angle,
-            new_velocity.0.x * sin_angle + new_velocity.0.y * cos_angle,
+    if rotation_angle.abs() > 1e-10 {
+        let (sin_angle, cos_angle) = rotation_angle.sin_cos();
+        new_velocity = Vec2::new(
+            new_velocity.x * cos_angle - new_velocity.y * sin_angle,
+            new_velocity.x * sin_angle + new_velocity.y * cos_angle,
         );
     }
 
@@ -487,8 +478,8 @@ pub fn compute_tile_effects(
     if total_drag > 0.0 {
         // Clamp drag factor to prevent velocity reversal
         let drag_factor = (1.0 - total_drag).max(0.0);
-        new_velocity.0 *= drag_factor;
+        new_velocity *= drag_factor;
     }
 
-    new_velocity
+    crate::stone::Velocity(new_velocity)
 }

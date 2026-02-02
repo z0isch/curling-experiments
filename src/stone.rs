@@ -2,7 +2,6 @@ use bevy::prelude::*;
 
 use crate::UiState;
 use crate::hex_grid::{HexCoordinate, HexGrid, hex_to_world};
-use crate::intersection;
 use crate::tile::{TileType, compute_tile_effects};
 
 #[derive(Component, Clone)]
@@ -36,28 +35,10 @@ pub fn stone(
 
 pub fn update_stone_position(
     mut stone: Single<(&Stone, &Velocity, &mut Transform)>,
-    tiles: Query<(&TileType, &Transform), Without<Stone>>,
     time: Res<Time>,
-    grid: Single<&HexGrid>,
 ) {
-    // If velocity is zero and on the goal tile, center it in the hex
-    if stone.1.0.length_squared() <= 1.
-        && tiles.iter().any(|(tile_type, transform)| {
-            tile_type == &TileType::Goal
-                && intersection::circle_hexagon_overlap_ratio(
-                    stone.2.translation.truncate(),
-                    stone.0.radius,
-                    transform.translation.truncate(),
-                    grid.hex_radius,
-                    100,
-                ) >= 0.9
-        })
-    {
-        stone.2.translation = hex_to_world(&grid.level.goal_coordinate, *grid).extend(3.0);
-    } else {
-        let delta = stone.1.0 * time.delta_secs();
-        stone.2.translation += delta.extend(0.);
-    }
+    let delta = stone.1.0 * time.delta_secs();
+    stone.2.translation += delta.extend(0.);
 }
 
 /// System that modifies stone velocity based on tile types it overlaps with.
@@ -68,7 +49,6 @@ pub fn apply_tile_velocity_effects(
     grid: Single<&HexGrid>,
     ui_state: Res<UiState>,
 ) {
-    const SAMPLES: u32 = 100;
     let tile_data: Vec<_> = tiles
         .iter()
         .map(|(tile_type, transform)| (tile_type, transform.translation.truncate()))
@@ -79,7 +59,6 @@ pub fn apply_tile_velocity_effects(
         &tile_data,
         *grid,
         ui_state.drag_coefficient,
-        SAMPLES,
         stone.0.radius,
     );
 }
