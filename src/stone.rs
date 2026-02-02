@@ -34,12 +34,36 @@ pub fn stone(
 }
 
 pub fn update_stone_position(
-    stone: Query<(&Velocity, &mut Transform), With<Stone>>,
+    mut stone: Query<(&mut Velocity, &mut Transform), With<Stone>>,
+    tiles: Query<(&TileType, &Transform), Without<Stone>>,
     time: Res<Time>,
+    debug_ui_state: Res<DebugUIState>,
 ) {
-    for (velocity, mut transform) in stone {
+    // Find goal tile position
+    let goal_pos = tiles.iter().find_map(|(tile_type, transform)| {
+        if *tile_type == TileType::Goal {
+            Some(transform.translation.truncate())
+        } else {
+            None
+        }
+    });
+
+    for (mut velocity, mut transform) in &mut stone {
         let delta = velocity.0 * time.delta_secs();
         transform.translation += delta.extend(0.);
+
+        // If close enough to the goal and moving slow enough, snap to goal center
+        if let Some(goal_center) = goal_pos {
+            let stone_pos = transform.translation.truncate();
+            let distance_to_goal = stone_pos.distance(goal_center);
+            let speed = velocity.0.length();
+
+            if distance_to_goal < debug_ui_state.snap_distance && speed < debug_ui_state.snap_velocity {
+                transform.translation.x = goal_center.x;
+                transform.translation.y = goal_center.y;
+                velocity.0 = Vec2::ZERO;
+            }
+        }
     }
 }
 

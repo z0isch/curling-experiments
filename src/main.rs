@@ -11,7 +11,7 @@ use bevy_rand::{
     plugin::EntropyPlugin,
     prelude::{ChaCha8Rng, WyRand},
 };
-use debug_ui::{DebugUIState, StoneUIConfig, ui};
+use debug_ui::{DebugUIState, StoneUIConfig, debug_ui};
 use hex_grid::{HexGrid, spawn_hex_grid};
 use stone::{
     Stone, Velocity, apply_tile_velocity_effects, resolve_collision, stone, update_stone_position,
@@ -26,6 +26,18 @@ use crate::{
 
 #[derive(Component)]
 struct StoneMoveLine;
+
+#[derive(Component)]
+struct CountdownText;
+
+#[derive(Resource)]
+pub struct Countdown {
+    pub timer: Timer,
+    pub count: u32,
+}
+
+#[derive(Component)]
+struct CountdownUI;
 
 #[derive(Resource, Default)]
 pub struct PhysicsPaused(pub bool);
@@ -47,7 +59,7 @@ fn main() {
             EntropyPlugin::<ChaCha8Rng>::default(),
             EntropyPlugin::<WyRand>::default(),
         ))
-        .add_systems(EguiPrimaryContextPass, ui)
+        .add_systems(EguiPrimaryContextPass, debug_ui)
         .add_systems(Startup, setup)
         .add_systems(
             FixedUpdate,
@@ -69,6 +81,7 @@ fn main() {
                 toggle_physics_pause,
                 toggle_tile_coordinates,
                 update_tile_material,
+                update_countdown,
             ),
         )
         .run();
@@ -82,7 +95,14 @@ fn setup(
     commands.insert_resource(PhysicsPaused(true));
     let level = get_level();
     let debug_ui_state = DebugUIState {
-        drag_coefficient: 0.0005,
+        hex_radius: 60.0,
+        stone_radius: 10.0,
+        min_sweep_distance: 75.0,
+        drag_coefficient: 0.01,
+        slow_down_factor: 5.0,
+        rotation_factor: 0.017,
+        snap_distance: 40.0,
+        snap_velocity: 40.0,
         stone_configs: level
             .stone_configs
             .iter()
@@ -91,11 +111,6 @@ fn setup(
                 facing: sc.facing.clone(),
             })
             .collect(),
-        min_sweep_distance: 2.0,
-        hex_radius: 20.0,
-        stone_radius: 10.0,
-        slow_down_factor: 100.0,
-        rotation_factor: 0.017,
     };
 
     commands.spawn(Camera2d);
@@ -117,6 +132,12 @@ fn setup(
 
     commands.insert_resource(tile_assets);
     commands.insert_resource(debug_ui_state);
+
+    spawn_countdown(&mut commands);
+    commands.insert_resource(Countdown {
+        timer: Timer::from_seconds(1.0, TimerMode::Repeating),
+        count: 3,
+    });
 }
 
 /// System that toggles physics pause when Space is pressed
@@ -126,17 +147,81 @@ fn toggle_physics_pause(input: Res<ButtonInput<KeyCode>>, mut paused: ResMut<Phy
     }
 }
 
+fn spawn_countdown(commands: &mut Commands) {
+    commands
+        .spawn((
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                ..default()
+            },
+            Pickable::IGNORE,
+            CountdownUI,
+        ))
+        .with_children(|parent| {
+            parent.spawn((
+                CountdownText,
+                Text::new("3"),
+                TextFont {
+                    font_size: 120.0,
+                    ..default()
+                },
+                TextColor(Color::srgba(1.0, 0.9, 0.2, 0.9)),
+                Pickable::IGNORE,
+            ));
+        });
+}
+
+/// System that updates the countdown and starts physics when it reaches zero
+fn update_countdown(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut countdown: ResMut<Countdown>,
+    mut paused: ResMut<PhysicsPaused>,
+    mut text_query: Query<&mut Text, With<CountdownText>>,
+    mut countdown_ui_query: Query<Entity, With<CountdownUI>>,
+) {
+    // Only run countdown while physics is paused and countdown is active
+    if !paused.0 || countdown.count == 0 {
+        return;
+    }
+
+    countdown.timer.tick(time.delta());
+
+    if countdown.timer.just_finished() {
+        countdown.count = countdown.count.saturating_sub(1);
+
+        if countdown.count == 0 {
+            for entity in &mut countdown_ui_query {
+                commands.entity(entity).despawn();
+            }
+            paused.0 = false;
+        } else {
+            // Update the countdown text
+            for mut text in &mut text_query {
+                **text = countdown.count.to_string();
+            }
+        }
+    }
+}
+
 /// System that restarts the game when 'R' key is pressed
-pub fn restart_game(
+fn restart_game(
     mut commands: Commands,
     input: Res<ButtonInput<KeyCode>>,
     grid: Single<Entity, With<HexGrid>>,
+    countdown_ui_query: Query<Entity, With<CountdownUI>>,
     debug_ui_state: Res<DebugUIState>,
     stone_query: Query<Entity, With<Stone>>,
+    mut paused: ResMut<PhysicsPaused>,
+    mut countdown: ResMut<Countdown>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
     if input.just_pressed(KeyCode::KeyR) {
+        paused.0 = true;
         let level = get_level();
 
         commands.entity(*grid).despawn();
@@ -164,6 +249,12 @@ pub fn restart_game(
                 debug_ui_state.stone_radius,
             ));
         }
+        for entity in countdown_ui_query {
+            commands.entity(entity).despawn();
+        }
+        countdown.count = 3;
+        countdown.timer.reset();
+        spawn_countdown(&mut commands);
     }
 }
 

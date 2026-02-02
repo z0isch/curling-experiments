@@ -67,18 +67,18 @@ pub fn tile(
 // ============================================================================
 
 pub const COLORS: [Color; 6] = [
-    // #dcf3ff
-    Color::srgb(220.0 / 255.0, 243.0 / 255.0, 1.),
-    // #baf2ef
-    Color::srgb(186.0 / 255.0, 242.0 / 255.0, 239.0 / 255.0),
-    // #a2d2df
-    Color::srgb(162.0 / 255.0, 210.0 / 255.0, 223.0 / 255.0),
-    // #396d7c
-    Color::srgb(57.0 / 255.0, 109.0 / 255.0, 124.0 / 255.0),
-    // #257ca3
-    Color::srgb(37.0 / 255.0, 124.0 / 255.0, 163.0 / 255.0),
-    //rgb(245, 92, 92)
-    Color::srgb(245.0 / 255.0, 92.0 / 255.0, 92.0 / 255.0),
+    // Cold ice white (almost glowing)
+    Color::srgb(240.0 / 255.0, 250.0 / 255.0, 255.0 / 255.0), // #F0FAFF
+    // Electric cyan (main ice color)
+    Color::srgb(40.0 / 255.0, 225.0 / 255.0, 255.0 / 255.0), // #28E1FF
+    // Acid mint (energy / highlights)
+    Color::srgb(90.0 / 255.0, 255.0 / 255.0, 200.0 / 255.0), // #5AFFC8
+    // Deep glacier blue (structure / background)
+    Color::srgb(15.0 / 255.0, 70.0 / 255.0, 120.0 / 255.0), // #0F4678
+    // Near-black ice (shadows / UI backing)
+    Color::srgb(8.0 / 255.0, 16.0 / 255.0, 30.0 / 255.0), // #08101E
+    // Hot strike accent (damage / danger)
+    Color::srgb(255.0 / 255.0, 60.0 / 255.0, 90.0 / 255.0), // #FF3C5A
 ];
 
 // ============================================================================
@@ -403,7 +403,16 @@ pub fn compute_tile_effects(
                 total_drag += drag_coefficient * ratio;
             }
             TileType::Goal => {
-                total_drag += drag_coefficient * ratio;
+                // Pull towards the center of the goal
+                let to_center = tile_world_pos - stone_pos;
+                let distance = to_center.length();
+                if distance > 1e-10 {
+                    let direction = to_center / distance;
+                    // Pull strength proportional to how much of stone is inside
+                    let pull_strength = 0.5 * ratio;
+                    new_velocity += direction * pull_strength;
+                }
+                total_drag += drag_coefficient * slow_down_factor * ratio;
             }
         }
     }
