@@ -418,9 +418,6 @@ pub fn compute_tile_effects(
     let mut rotation_angle: f32 = 0.0;
     let mut total_drag: f32 = 0.0;
 
-    // Accumulated wall normal for deterministic reflection
-    let mut combined_wall_normal = Vec2::ZERO;
-
     for &(tile_type, tile_world_pos) in tiles {
         if !intersection::aabb_intersects(pos, stone_radius, tile_world_pos, hex_grid.hex_radius) {
             continue;
@@ -428,13 +425,10 @@ pub fn compute_tile_effects(
 
         match tile_type {
             TileType::Wall => {
-                // Accumulate wall influence instead of reflecting immediately
-                // This ensures deterministic behavior when touching multiple walls
-                let to_wall = tile_world_pos - pos;
-                let len_sq = to_wall.length_squared();
-                // Weight by inverse distance squared (closer walls have more influence)
-                let inv_dist = 1.0 / len_sq.sqrt();
-                combined_wall_normal += -to_wall * inv_dist * inv_dist;
+                let wall_direction = -tile_world_pos + pos;
+                let wall_normal = wall_direction / wall_direction.length();
+                let dot = new_velocity.dot(wall_normal);
+                new_velocity -= 2.0 * dot * wall_normal;
             }
             TileType::MaintainSpeed => {
                 total_drag += drag_coefficient;
@@ -454,15 +448,6 @@ pub fn compute_tile_effects(
                 total_drag += drag_coefficient;
             }
         }
-    }
-
-    // Apply single deterministic wall reflection from combined normal
-    let wall_len_sq = combined_wall_normal.length_squared();
-    let wall_normal = combined_wall_normal / wall_len_sq.sqrt();
-    let dot = new_velocity.dot(wall_normal);
-    if dot < 0.0 {
-        // Only reflect if moving toward the wall
-        new_velocity -= 2.0 * dot * wall_normal;
     }
 
     // Apply accumulated rotation to velocity vector
