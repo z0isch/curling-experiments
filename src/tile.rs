@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use crate::hex_grid::{HexGrid, world_to_hex};
+use crate::hex_grid::HexGrid;
 use crate::{DebugUIState, intersection};
 
 // ============================================================================
@@ -107,6 +107,9 @@ pub struct TileDragging {
     pub distance_dragged: f32,
 }
 
+#[derive(Component)]
+pub struct MouseHover;
+
 // ============================================================================
 // Resources
 // ============================================================================
@@ -190,41 +193,23 @@ impl TileAssets {
 
 /// System to change tile type based on keyboard input when hovering over a tile
 pub fn change_tile_type(
-    window: Single<&Window>,
-    camera: Single<(&Camera, &GlobalTransform)>,
-    grid: Single<&HexGrid>,
     input: Res<ButtonInput<KeyCode>>,
-    mut tiles: Query<(&mut TileType, &Transform)>,
+    mut tile_type: Single<&mut TileType, With<MouseHover>>,
 ) {
-    let Some(cursor_pos) = window.cursor_position() else {
+    if **tile_type == TileType::Goal {
         return;
-    };
-
-    let Ok(world_pos) = camera.0.viewport_to_world_2d(camera.1, cursor_pos) else {
-        return;
-    };
-    if let Some(hex_coord) = world_to_hex(world_pos, *grid) {
-        let Some((mut tile_type, _)) = tiles.iter_mut().find(|(_, transform)| {
-            world_to_hex(transform.translation.truncate(), *grid).as_ref() == Some(&hex_coord)
-        }) else {
-            log::error!("Tile not found for stone at position: {:?}", hex_coord);
-            return;
-        };
-        if *tile_type == TileType::Goal {
-            return;
-        }
-        if input.just_pressed(KeyCode::KeyW) {
-            *tile_type = TileType::MaintainSpeed;
-        }
-        if input.just_pressed(KeyCode::KeyA) {
-            *tile_type = TileType::TurnClockwise;
-        }
-        if input.just_pressed(KeyCode::KeyD) {
-            *tile_type = TileType::TurnCounterclockwise;
-        }
-        if input.just_pressed(KeyCode::KeyS) {
-            *tile_type = TileType::SlowDown;
-        }
+    }
+    if input.just_pressed(KeyCode::KeyW) {
+        **tile_type = TileType::MaintainSpeed;
+    }
+    if input.just_pressed(KeyCode::KeyA) {
+        **tile_type = TileType::TurnClockwise;
+    }
+    if input.just_pressed(KeyCode::KeyD) {
+        **tile_type = TileType::TurnCounterclockwise;
+    }
+    if input.just_pressed(KeyCode::KeyS) {
+        **tile_type = TileType::SlowDown;
     }
 }
 
@@ -246,57 +231,40 @@ pub fn toggle_tile_coordinates(
     }
 }
 
-/// Updates the tile fill material for hover effects.
-pub fn update_tile_hover_material(
-    entity: Entity,
-    hovered: bool,
-    tile_type_query: &Query<&TileType>,
-    children_query: &Query<&Children>,
-    tile_assets: &TileAssets,
-    fill_query: &mut Query<&mut MeshMaterial2d<ColorMaterial>, With<TileFill>>,
+pub fn update_tile_material(
+    tile_query: Query<(Entity, &TileType, Option<&MouseHover>)>,
+    children_query: Query<&Children>,
+    tile_assets: Res<TileAssets>,
+    mut fill_query: Query<&mut MeshMaterial2d<ColorMaterial>, With<TileFill>>,
 ) {
-    let Ok(tile_type) = tile_type_query.get(entity) else {
-        return;
-    };
-    if *tile_type == TileType::Wall || *tile_type == TileType::Goal {
-        return;
-    }
-    let Ok(children) = children_query.get(entity) else {
-        return;
-    };
-    let assets = tile_assets.get_assets(tile_type);
-    let material = if hovered {
-        &assets.hover_material
-    } else {
-        &assets.material
-    };
-    for child in children.iter() {
-        if let Ok(mut mesh_material) = fill_query.get_mut(child) {
-            mesh_material.0 = material.clone();
+    for (entity, tile_type, mouse_hover) in tile_query {
+        if *tile_type == TileType::Wall || *tile_type == TileType::Goal {
+            continue;
+        }
+        let Ok(children) = children_query.get(entity) else {
+            continue;
+        };
+        let assets = tile_assets.get_assets(tile_type);
+        let material = if mouse_hover.is_some() {
+            &assets.hover_material
+        } else {
+            &assets.material
+        };
+        for child in children.iter() {
+            if let Ok(mut mesh_material) = fill_query.get_mut(child) {
+                mesh_material.0 = material.clone();
+            }
         }
     }
 }
 
 pub fn update_tile_type(
     debug_ui_state: Res<DebugUIState>,
-    tiles: Query<(Entity, &TileDragging, &mut TileType)>,
-    children_query: Query<&Children>,
-    mut fill_query: Query<&mut MeshMaterial2d<ColorMaterial>, With<TileFill>>,
-    tile_assets: Res<TileAssets>,
+    tiles: Query<(&TileDragging, &mut TileType)>,
 ) {
-    for (entity, tile_dragging, mut tile_type) in tiles {
+    for (tile_dragging, mut tile_type) in tiles {
         if tile_dragging.distance_dragged > debug_ui_state.min_sweep_distance {
             *tile_type = TileType::MaintainSpeed;
-
-            let Ok(children) = children_query.get(entity) else {
-                return;
-            };
-            for child in children.iter() {
-                let assets = tile_assets.get_assets(&tile_type);
-                if let Ok(mut mesh_material) = fill_query.get_mut(child) {
-                    mesh_material.0 = assets.material.clone();
-                }
-            }
         }
     }
 }
@@ -305,38 +273,12 @@ pub fn update_tile_type(
 // Observers
 //=============================================================================
 
-pub fn on_pointer_over(
-    over: On<Pointer<Over>>,
-    tile_type: Query<&TileType>,
-    children: Query<&Children>,
-    tile_assets: Res<TileAssets>,
-    mut fill_query: Query<&mut MeshMaterial2d<ColorMaterial>, With<TileFill>>,
-) {
-    update_tile_hover_material(
-        over.entity,
-        true,
-        &tile_type,
-        &children,
-        &tile_assets,
-        &mut fill_query,
-    );
+pub fn on_pointer_over(over: On<Pointer<Over>>, mut commands: Commands) {
+    commands.entity(over.entity).insert(MouseHover);
 }
 
-pub fn on_pointer_out(
-    out: On<Pointer<Out>>,
-    tile_type: Query<&TileType>,
-    children: Query<&Children>,
-    tile_assets: Res<TileAssets>,
-    mut fill_query: Query<&mut MeshMaterial2d<ColorMaterial>, With<TileFill>>,
-) {
-    update_tile_hover_material(
-        out.entity,
-        false,
-        &tile_type,
-        &children,
-        &tile_assets,
-        &mut fill_query,
-    );
+pub fn on_pointer_out(out: On<Pointer<Out>>, mut commands: Commands) {
+    commands.entity(out.entity).remove::<MouseHover>();
 }
 
 pub fn on_tile_drag_enter(
@@ -356,32 +298,15 @@ pub fn on_tile_drag_enter(
 
 pub fn on_tile_dragging(
     drag: On<Pointer<Drag>>,
-    window: Single<&Window>,
-    camera: Single<(&Camera, &GlobalTransform)>,
-    grid: Single<&HexGrid>,
-    mut tiles: Query<(&mut TileDragging, &Transform, &TileType)>,
+    mut tile: Single<(&mut TileDragging, &TileType), With<MouseHover>>,
 ) {
-    let Some(cursor_pos) = window.cursor_position() else {
+    if *tile.1 == TileType::Goal || *tile.1 == TileType::Wall {
         return;
-    };
-
-    let Ok(world_pos) = camera.0.viewport_to_world_2d(camera.1, cursor_pos) else {
-        return;
-    };
-    if let Some(hex_coord) = world_to_hex(world_pos, *grid) {
-        let Some((mut tile_dragging, _, tile_type)) = tiles.iter_mut().find(|(_, transform, _)| {
-            world_to_hex(transform.translation.truncate(), *grid).as_ref() == Some(&hex_coord)
-        }) else {
-            return;
-        };
-        if *tile_type == TileType::Goal || *tile_type == TileType::Wall {
-            return;
-        }
-        tile_dragging.distance_dragged +=
-            (drag.pointer_location.position - tile_dragging.last_position).length();
-        tile_dragging.last_position = drag.pointer_location.position;
     }
+    tile.0.distance_dragged += (drag.pointer_location.position - tile.0.last_position).length();
+    tile.0.last_position = drag.pointer_location.position;
 }
+
 // ============================================================================
 // Physics
 // ============================================================================

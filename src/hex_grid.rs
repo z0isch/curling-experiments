@@ -64,68 +64,6 @@ pub fn hex_to_world(hex_coord: &HexCoordinate, hex_grid: &HexGrid) -> Vec2 {
     Vec2::new(x, y)
 }
 
-/// Converts world position to hex grid coordinates for flat-top hexagons
-pub fn world_to_hex(world_pos: Vec2, hex_grid: &HexGrid) -> Option<HexCoordinate> {
-    // Translate position relative to grid origin
-    let rel_x = world_pos.x - hex_grid.offset_x;
-    let rel_y = world_pos.y - hex_grid.offset_y;
-
-    // Estimate column (accounting for horizontal spacing)
-    let q_estimate = (rel_x / hex_grid.horiz_spacing).round() as i32;
-
-    // Check bounds
-    if q_estimate < 0 || q_estimate >= hex_grid.cols {
-        return None;
-    }
-
-    // Account for vertical offset on odd columns
-    let y_offset = if q_estimate % 2 == 1 {
-        hex_grid.vert_spacing / 2.0
-    } else {
-        0.0
-    };
-
-    // Estimate row (r=0 at top, inverted from y coordinate)
-    let visual_r = ((rel_y - y_offset) / hex_grid.vert_spacing).round() as i32;
-    let r_estimate = (hex_grid.rows - 1) - visual_r;
-
-    // Check bounds
-    if r_estimate < 0 || r_estimate >= hex_grid.rows {
-        return None;
-    }
-
-    // Calculate the center of this hex cell (using inverted r for y position)
-    let hex_center_x = hex_grid.offset_x + q_estimate as f32 * hex_grid.horiz_spacing;
-    let hex_center_y = hex_grid.offset_y
-        + (hex_grid.rows - 1 - r_estimate) as f32 * hex_grid.vert_spacing
-        + y_offset;
-
-    // Check if point is actually within the hexagon (using distance check)
-    // For flat-top hexagons, the inner radius (apothem) = radius * sqrt(3)/2
-    let dx = (world_pos.x - hex_center_x).abs();
-    let dy = (world_pos.y - hex_center_y).abs();
-
-    // Simple bounding check using the hexagon's geometry
-    let inner_radius = hex_grid.hex_radius * 3.0_f32.sqrt() / 2.0;
-
-    // For a flat-top hexagon, check if point is inside
-    // Using the hex boundary equations
-    if dx > hex_grid.hex_radius || dy > inner_radius {
-        return None;
-    }
-
-    // More precise check for the angled edges
-    // For flat-top hex: the slanted edges have slope related to the hex geometry
-    if dx * inner_radius + dy * hex_grid.hex_radius / 2.0 > hex_grid.hex_radius * inner_radius {
-        return None;
-    }
-
-    Some(HexCoordinate {
-        q: q_estimate,
-        r: r_estimate,
-    })
-}
-
 pub fn spawn_hex_grid(commands: &mut Commands, grid: &HexGrid, tile_assets: &TileAssets) -> Entity {
     let mut tile_entities = Vec::new();
 

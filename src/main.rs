@@ -18,7 +18,7 @@ use tile::{TileAssets, TileType, change_tile_type, compute_tile_effects, toggle_
 
 use crate::{
     hex_grid::{get_initial_stone_velocity, get_level},
-    tile::update_tile_type,
+    tile::{update_tile_material, update_tile_type},
 };
 
 #[derive(Component)]
@@ -61,6 +61,7 @@ fn main() {
                 update_tile_type,
                 toggle_physics_pause,
                 toggle_tile_coordinates,
+                update_tile_material,
             ),
         )
         .run();
