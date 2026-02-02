@@ -58,7 +58,9 @@ pub fn update_stone_position(
             let distance_to_goal = stone_pos.distance(goal_center);
             let speed = velocity.0.length();
 
-            if distance_to_goal < debug_ui_state.snap_distance && speed < debug_ui_state.snap_velocity {
+            if distance_to_goal < debug_ui_state.snap_distance
+                && speed < debug_ui_state.snap_velocity
+            {
                 transform.translation.x = goal_center.x;
                 transform.translation.y = goal_center.y;
                 velocity.0 = Vec2::ZERO;
