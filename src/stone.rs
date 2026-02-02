@@ -59,5 +59,7 @@ pub fn apply_tile_velocity_effects(
         *grid,
         ui_state.drag_coefficient,
         stone.0.radius,
+        ui_state.slow_down_factor,
+        ui_state.rotation_factor,
     );
 }

@@ -72,6 +72,8 @@ pub struct UiState {
     pub min_sweep_distance: f32,
     pub hex_radius: f32,
     pub stone_radius: f32,
+    pub slow_down_factor: f32,
+    pub rotation_factor: f32,
 }
 
 fn ui(mut contexts: EguiContexts, mut ui_state: ResMut<UiState>) -> Result {
@@ -91,6 +93,12 @@ fn ui(mut contexts: EguiContexts, mut ui_state: ResMut<UiState>) -> Result {
         ui.add(
             egui::Slider::new(&mut ui_state.stone_velocity_magnitude, 0.0..=500.0)
                 .text("Stone Velocity Magnitude"),
+        );
+        ui.add(
+            egui::Slider::new(&mut ui_state.slow_down_factor, 1.0..=500.0).text("Slow Down Factor"),
+        );
+        ui.add(
+            egui::Slider::new(&mut ui_state.rotation_factor, 0.001..=0.1).text("Rotation Factor"),
         );
         egui::ComboBox::from_label("Stone Facing")
             .selected_text(format!("{:?}", ui_state.stone_facing))
@@ -123,6 +131,8 @@ fn setup(
         min_sweep_distance: 2.0,
         hex_radius: 20.0,
         stone_radius: 10.0,
+        slow_down_factor: 100.0,
+        rotation_factor: 0.017,
     };
 
     commands.spawn(Camera2d);
@@ -215,6 +225,8 @@ fn draw_move_line(
         ui_state.drag_coefficient,
         stone.0.radius,
         fixed_time.delta_secs(),
+        ui_state.slow_down_factor,
+        ui_state.rotation_factor,
     );
 
     // Draw line segments between trajectory points
@@ -242,6 +254,8 @@ fn simulate_trajectory(
     drag_coefficient: f32,
     stone_radius: f32,
     fixed_dt: f32,
+    slow_down_factor: f32,
+    rotation_factor: f32,
 ) -> Vec<Vec2> {
     const MIN_VELOCITY: f32 = 1.0; // Stop when velocity is very low
     const LINE_SEGMENT_SAMPLES: usize = 3;
@@ -269,6 +283,8 @@ fn simulate_trajectory(
             hex_grid,
             drag_coefficient,
             stone_radius,
+            slow_down_factor,
+            rotation_factor,
         );
     }
 

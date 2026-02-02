@@ -427,6 +427,8 @@ pub fn compute_tile_effects(
     hex_grid: &HexGrid,
     drag_coefficient: f32,
     stone_radius: f32,
+    slow_down_factor: f32,
+    rotation_factor: f32,
 ) -> crate::stone::Velocity {
     let mut new_velocity = velocity.0;
 
@@ -444,6 +446,7 @@ pub fn compute_tile_effects(
         if ratio < 0.01 {
             continue;
         }
+
         match tile_type {
             TileType::Wall => {
                 // Use proper hexagon edge normal instead of radial direction
@@ -465,14 +468,14 @@ pub fn compute_tile_effects(
                 total_drag += drag_coefficient * ratio;
             }
             TileType::SlowDown => {
-                total_drag += drag_coefficient * ratio * 100.0;
+                total_drag += drag_coefficient * ratio * slow_down_factor;
             }
             TileType::TurnCounterclockwise => {
-                rotation_angle += 0.017 * ratio; // ~1 degree per frame
+                rotation_angle += rotation_factor * ratio; // ~1 degree per frame
                 total_drag += drag_coefficient * ratio;
             }
             TileType::TurnClockwise => {
-                rotation_angle -= 0.017 * ratio; // clockwise = negative
+                rotation_angle -= rotation_factor * ratio; // clockwise = negative
                 total_drag += drag_coefficient * ratio;
             }
             TileType::Goal => {
