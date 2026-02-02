@@ -387,6 +387,37 @@ pub fn on_tile_dragging(
 // Physics
 // ============================================================================
 
+/// Pre-computed edge normals for a pointy-top hexagon (vertices at 0°, 60°, 120°, etc.)
+/// Each normal points outward from the center, perpendicular to its edge.
+/// Edge normals are at angles: 30°, 90°, 150°, 210°, 270°, 330°
+const HEX_EDGE_NORMALS: [Vec2; 6] = [
+    Vec2::new(0.8660254, 0.5),   // 30° - edge between 0° and 60° vertices
+    Vec2::new(0.0, 1.0),         // 90° - edge between 60° and 120° vertices
+    Vec2::new(-0.8660254, 0.5),  // 150° - edge between 120° and 180° vertices
+    Vec2::new(-0.8660254, -0.5), // 210° - edge between 180° and 240° vertices
+    Vec2::new(0.0, -1.0),        // 270° - edge between 240° and 300° vertices
+    Vec2::new(0.8660254, -0.5),  // 330° - edge between 300° and 360° vertices
+];
+
+/// Returns the outward normal of the hexagon edge closest to the given relative position.
+/// `relative_pos` is the position relative to the hexagon center (stone_pos - hex_center).
+fn hex_edge_normal(relative_pos: Vec2) -> Vec2 {
+    // Get the angle of the relative position (0 to 2π)
+    let angle = relative_pos.y.atan2(relative_pos.x);
+    // Convert to positive angle in range [0, 2π)
+    let angle = if angle < 0.0 {
+        angle + std::f32::consts::TAU
+    } else {
+        angle
+    };
+
+    // Determine which of the 6 sectors (each 60° = π/3) the position is in
+    // Sectors are: [0°,60°), [60°,120°), [120°,180°), [180°,240°), [240°,300°), [300°,360°)
+    let sector = ((angle / std::f32::consts::FRAC_PI_3) as usize).min(5);
+
+    HEX_EDGE_NORMALS[sector]
+}
+
 /// Computes the new velocity after applying all tile effects at the given position.
 /// This is the core physics logic shared by both real-time simulation and trajectory prediction.
 pub fn compute_tile_effects(
@@ -408,17 +439,27 @@ pub fn compute_tile_effects(
             stone_radius,
             tile_world_pos,
             hex_grid.hex_radius - 2.,
-            64,
+            60,
         );
-        if ratio < 0.10 {
+        if ratio < 0.01 {
             continue;
         }
         match tile_type {
             TileType::Wall => {
-                let wall_direction = -tile_world_pos + stone_pos;
-                let wall_normal = wall_direction / wall_direction.length();
+                // Use proper hexagon edge normal instead of radial direction
+                let wall_normal = hex_edge_normal(stone_pos - tile_world_pos);
                 let dot = new_velocity.dot(wall_normal);
-                new_velocity -= 2.0 * dot * wall_normal;
+                // Only reflect if moving toward the wall
+                if dot < 0.0 {
+                    // Store original speed to preserve magnitude after reflection
+                    let original_speed = new_velocity.length();
+                    new_velocity -= 2.0 * dot * wall_normal;
+                    // Re-normalize to original speed to prevent floating-point drift
+                    let new_speed = new_velocity.length();
+                    if new_speed > 1e-10 {
+                        new_velocity *= original_speed / new_speed;
+                    }
+                }
             }
             TileType::MaintainSpeed => {
                 total_drag += drag_coefficient * ratio;

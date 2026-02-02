@@ -244,19 +244,22 @@ fn simulate_trajectory(
     fixed_dt: f32,
 ) -> Vec<Vec2> {
     const MIN_VELOCITY: f32 = 1.0; // Stop when velocity is very low
-
+    const LINE_SEGMENT_SAMPLES: usize = 3;
     let mut trajectory = vec![*position];
     let mut pos = *position;
     let mut velocity = velocity.clone();
 
-    loop {
+    let steps = 10000;
+    for i in 0..steps {
         if velocity.0.length_squared() < MIN_VELOCITY * MIN_VELOCITY {
             break;
         }
 
         // Step 1: Move position first (matches update_stone_position)
         pos += velocity.0 * fixed_dt;
-        trajectory.push(pos);
+        if i % LINE_SEGMENT_SAMPLES == 0 {
+            trajectory.push(pos);
+        }
 
         // Step 2: Then update velocity based on new position (matches apply_tile_velocity_effects)
         velocity = compute_tile_effects(
