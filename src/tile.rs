@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
 use crate::hex_grid::{HexGrid, world_to_hex};
-use crate::{UiState, intersection};
+use crate::{DebugUIState, intersection};
 
 // ============================================================================
 // Bundle Function
@@ -277,16 +277,15 @@ pub fn update_tile_hover_material(
     }
 }
 
-/// Updates the tile dragging text to display the distance dragged (sweep count)
-pub fn update_sweep_count(
-    ui_state: Res<UiState>,
+pub fn update_tile_type(
+    debug_ui_state: Res<DebugUIState>,
     tiles: Query<(Entity, &TileDragging, &mut TileType)>,
     children_query: Query<&Children>,
     mut fill_query: Query<&mut MeshMaterial2d<ColorMaterial>, With<TileFill>>,
     tile_assets: Res<TileAssets>,
 ) {
     for (entity, tile_dragging, mut tile_type) in tiles {
-        if tile_dragging.distance_dragged > ui_state.min_sweep_distance {
+        if tile_dragging.distance_dragged > debug_ui_state.min_sweep_distance {
             *tile_type = TileType::MaintainSpeed;
 
             let Ok(children) = children_query.get(entity) else {

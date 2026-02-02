@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 
-use crate::UiState;
+use crate::DebugUIState;
 use crate::hex_grid::{HexCoordinate, HexGrid, hex_to_world};
 use crate::tile::{TileType, compute_tile_effects};
 
@@ -46,7 +46,7 @@ pub fn apply_tile_velocity_effects(
     mut stone: Single<(&Stone, &mut Velocity, &mut Transform)>,
     tiles: Query<(&TileType, &Transform), Without<Stone>>,
     grid: Single<&HexGrid>,
-    ui_state: Res<UiState>,
+    debug_ui_state: Res<DebugUIState>,
 ) {
     let tile_data: Vec<_> = tiles
         .iter()
@@ -57,9 +57,9 @@ pub fn apply_tile_velocity_effects(
         &stone.1,
         &tile_data,
         *grid,
-        ui_state.drag_coefficient,
+        debug_ui_state.drag_coefficient,
         stone.0.radius,
-        ui_state.slow_down_factor,
-        ui_state.rotation_factor,
+        debug_ui_state.slow_down_factor,
+        debug_ui_state.rotation_factor,
     );
 }

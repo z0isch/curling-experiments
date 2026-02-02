@@ -1,3 +1,4 @@
+mod debug_ui;
 mod hex_grid;
 mod intersection;
 mod stone;
@@ -5,18 +6,19 @@ mod tile;
 
 use bevy::prelude::*;
 use bevy::window::WindowResolution;
-use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
+use bevy_egui::{EguiPlugin, EguiPrimaryContextPass};
 use bevy_rand::{
     plugin::EntropyPlugin,
     prelude::{ChaCha8Rng, WyRand},
 };
+use debug_ui::{DebugUIState, ui};
 use hex_grid::{HexGrid, spawn_hex_grid};
 use stone::{Stone, Velocity, apply_tile_velocity_effects, stone, update_stone_position};
 use tile::{TileAssets, TileType, change_tile_type, compute_tile_effects, toggle_tile_coordinates};
 
 use crate::{
-    hex_grid::{Facing, get_initial_stone_velocity, get_level},
-    tile::update_sweep_count,
+    hex_grid::{get_initial_stone_velocity, get_level},
+    tile::update_tile_type,
 };
 
 #[derive(Component)]
@@ -50,69 +52,18 @@ fn main() {
                 .chain()
                 .run_if(|paused: Res<PhysicsPaused>| !paused.0),
         )
-        .add_systems(Update, toggle_tile_coordinates)
         .add_systems(
             Update,
             (
                 change_tile_type,
                 draw_move_line,
                 restart_game,
-                update_sweep_count,
+                update_tile_type,
                 toggle_physics_pause,
+                toggle_tile_coordinates,
             ),
         )
         .run();
-}
-
-#[derive(Resource, Clone, Debug)]
-pub struct UiState {
-    pub drag_coefficient: f32,
-    pub stone_velocity_magnitude: f32,
-    pub stone_facing: Facing,
-    pub min_sweep_distance: f32,
-    pub hex_radius: f32,
-    pub stone_radius: f32,
-    pub slow_down_factor: f32,
-    pub rotation_factor: f32,
-}
-
-fn ui(mut contexts: EguiContexts, mut ui_state: ResMut<UiState>) -> Result {
-    egui::Window::new("").show(contexts.ctx_mut()?, |ui| {
-        ui.add(egui::Label::new("R to restart"));
-        ui.add(egui::Label::new("Space to pause/resume"));
-        ui.add(egui::Slider::new(&mut ui_state.hex_radius, 10.0..=80.0).text("Hex Radius"));
-        ui.add(egui::Slider::new(&mut ui_state.stone_radius, 10.0..=30.0).text("Stone Radius"));
-        ui.add(
-            egui::Slider::new(&mut ui_state.min_sweep_distance, 0.0..=200.0)
-                .text("Min Sweep Distance"),
-        );
-        ui.add(
-            egui::Slider::new(&mut ui_state.drag_coefficient, 0.0001..=0.001)
-                .text("Drag Coefficient"),
-        );
-        ui.add(
-            egui::Slider::new(&mut ui_state.stone_velocity_magnitude, 0.0..=500.0)
-                .text("Stone Velocity Magnitude"),
-        );
-        ui.add(
-            egui::Slider::new(&mut ui_state.slow_down_factor, 1.0..=500.0).text("Slow Down Factor"),
-        );
-        ui.add(
-            egui::Slider::new(&mut ui_state.rotation_factor, 0.001..=0.1).text("Rotation Factor"),
-        );
-        egui::ComboBox::from_label("Stone Facing")
-            .selected_text(format!("{:?}", ui_state.stone_facing))
-            .show_ui(ui, |ui| {
-                for facing in Facing::iterator() {
-                    ui.selectable_value(
-                        &mut ui_state.stone_facing,
-                        facing.clone(),
-                        facing.to_string(),
-                    );
-                }
-            });
-    });
-    Ok(())
 }
 
 fn setup(
@@ -124,7 +75,7 @@ fn setup(
     let level = get_level();
     let initial_velocity =
         get_initial_stone_velocity(&level.facing, &level.stone_velocity_magnitude);
-    let ui_state = UiState {
+    let debug_ui_state = DebugUIState {
         drag_coefficient: 0.0005,
         stone_velocity_magnitude: level.stone_velocity_magnitude,
         stone_facing: level.facing.clone(),
@@ -137,7 +88,7 @@ fn setup(
 
     commands.spawn(Camera2d);
 
-    let grid = HexGrid::new(ui_state.hex_radius, &level);
+    let grid = HexGrid::new(debug_ui_state.hex_radius, &level);
     let tile_assets = TileAssets::new(&mut meshes, &mut materials, &grid);
 
     spawn_hex_grid(&mut commands, &grid, &tile_assets);
@@ -148,11 +99,11 @@ fn setup(
         &grid,
         &grid.level.start_coordinate,
         initial_velocity,
-        ui_state.stone_radius,
+        debug_ui_state.stone_radius,
     ));
 
     commands.insert_resource(tile_assets);
-    commands.insert_resource(ui_state);
+    commands.insert_resource(debug_ui_state);
 }
 
 /// System that toggles physics pause when Space is pressed
@@ -167,19 +118,19 @@ pub fn restart_game(
     mut commands: Commands,
     input: Res<ButtonInput<KeyCode>>,
     grid: Single<Entity, With<HexGrid>>,
-    ui_state: Res<UiState>,
+    debug_ui_state: Res<DebugUIState>,
     stone_query: Single<Entity, With<Stone>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
     if input.just_pressed(KeyCode::KeyR) {
         let mut level = get_level();
-        level.facing = ui_state.stone_facing.clone();
-        level.stone_velocity_magnitude = ui_state.stone_velocity_magnitude;
+        level.facing = debug_ui_state.stone_facing.clone();
+        level.stone_velocity_magnitude = debug_ui_state.stone_velocity_magnitude;
 
         commands.entity(*grid).despawn();
 
-        let grid = HexGrid::new(ui_state.hex_radius, &level);
+        let grid = HexGrid::new(debug_ui_state.hex_radius, &level);
         let tile_assets = TileAssets::new(&mut meshes, &mut materials, &grid);
         spawn_hex_grid(&mut commands, &grid, &tile_assets);
         commands.entity(*stone_query).despawn();
@@ -189,7 +140,7 @@ pub fn restart_game(
             &grid,
             &level.start_coordinate,
             get_initial_stone_velocity(&level.facing, &level.stone_velocity_magnitude),
-            ui_state.stone_radius,
+            debug_ui_state.stone_radius,
         ));
     }
 }
@@ -199,7 +150,7 @@ fn draw_move_line(
     mut meshes: ResMut<Assets<Mesh>>,
     tile_assets: Res<TileAssets>,
     grid: Single<&HexGrid>,
-    ui_state: Res<UiState>,
+    debug_ui_state: Res<DebugUIState>,
     stone: Single<(&Stone, &Velocity, &Transform)>,
     tiles: Query<(&TileType, &Transform), Without<Stone>>,
     lines: Query<Entity, With<StoneMoveLine>>,
@@ -222,23 +173,18 @@ fn draw_move_line(
         stone.1,
         &tile_data,
         *grid,
-        ui_state.drag_coefficient,
+        debug_ui_state.drag_coefficient,
         stone.0.radius,
         fixed_time.delta_secs(),
-        ui_state.slow_down_factor,
-        ui_state.rotation_factor,
+        debug_ui_state.slow_down_factor,
+        debug_ui_state.rotation_factor,
     );
-
-    // Draw line segments between trajectory points
-    for window in trajectory.windows(2) {
-        let (start, end) = (window[0], window[1]);
-        commands.spawn((
-            StoneMoveLine,
-            Mesh2d(meshes.add(Segment2d::new(start, end))),
-            MeshMaterial2d(tile_assets.line_material.clone()),
-            Transform::from_xyz(0., 0., 3.0),
-        ));
-    }
+    commands.spawn((
+        StoneMoveLine,
+        Mesh2d(meshes.add(Polyline2d::new(trajectory))),
+        MeshMaterial2d(tile_assets.line_material.clone()),
+        Transform::from_xyz(0., 0., 3.0),
+    ));
 }
 
 /// Simulates the stone's trajectory by forward-integrating physics.
