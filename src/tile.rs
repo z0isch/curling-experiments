@@ -48,18 +48,6 @@ pub fn tile(
             ),
             (
                 TileCoordinateText,
-                TileDraggingText,
-                Text2d::new(""),
-                TextFont {
-                    font_size: 10.0,
-                    ..default()
-                },
-                TextColor(Color::BLACK),
-                Transform::from_xyz(0., 0., 2.0)
-                    .with_rotation(Quat::from_rotation_z(-std::f32::consts::FRAC_PI_6)),
-            ),
-            (
-                TileCoordinateText,
                 Visibility::Hidden,
                 Text2d::new(format!("{},{}", q, r)),
                 TextFont {
@@ -112,9 +100,6 @@ pub struct TileFill;
 
 #[derive(Component)]
 pub struct TileCoordinateText;
-
-#[derive(Component)]
-pub struct TileDraggingText;
 
 #[derive(Component, Debug)]
 pub struct TileDragging {
@@ -388,7 +373,6 @@ pub fn on_tile_dragging(
         let Some((mut tile_dragging, _, tile_type)) = tiles.iter_mut().find(|(_, transform, _)| {
             world_to_hex(transform.translation.truncate(), *grid).as_ref() == Some(&hex_coord)
         }) else {
-            log::error!("Tile not found for stone at position: {:?}", hex_coord);
             return;
         };
         if *tile_type == TileType::Goal || *tile_type == TileType::Wall {
@@ -406,7 +390,7 @@ pub fn on_tile_dragging(
 /// Computes the new velocity after applying all tile effects at the given position.
 /// This is the core physics logic shared by both real-time simulation and trajectory prediction.
 pub fn compute_tile_effects(
-    pos: Vec2,
+    stone_pos: Vec2,
     velocity: &crate::stone::Velocity,
     tiles: &[(&TileType, Vec2)],
     hex_grid: &HexGrid,
@@ -419,13 +403,18 @@ pub fn compute_tile_effects(
     let mut total_drag: f32 = 0.0;
 
     for &(tile_type, tile_world_pos) in tiles {
-        if !intersection::aabb_intersects(pos, stone_radius, tile_world_pos, hex_grid.hex_radius) {
+        // Check if any part of the stone circle overlaps with this hex tile
+        if !intersection::circle_intersects_flat_top_hexagon(
+            stone_pos,
+            stone_radius,
+            tile_world_pos,
+            hex_grid.hex_radius - 2.,
+        ) {
             continue;
         }
-
         match tile_type {
             TileType::Wall => {
-                let wall_direction = -tile_world_pos + pos;
+                let wall_direction = -tile_world_pos + stone_pos;
                 let wall_normal = wall_direction / wall_direction.length();
                 let dot = new_velocity.dot(wall_normal);
                 new_velocity -= 2.0 * dot * wall_normal;
@@ -434,7 +423,7 @@ pub fn compute_tile_effects(
                 total_drag += drag_coefficient;
             }
             TileType::SlowDown => {
-                total_drag += drag_coefficient * 10.0;
+                total_drag += drag_coefficient * 100.0;
             }
             TileType::TurnCounterclockwise => {
                 rotation_angle += 0.017; // ~1 degree per frame

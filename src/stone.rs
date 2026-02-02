@@ -42,7 +42,6 @@ pub fn update_stone_position(
 }
 
 /// System that modifies stone velocity based on tile types it overlaps with.
-/// Uses circle_hexagon_overlap_ratio as a multiplicative factor for the effect strength.
 pub fn apply_tile_velocity_effects(
     mut stone: Single<(&Stone, &mut Velocity, &mut Transform)>,
     tiles: Query<(&TileType, &Transform), Without<Stone>>,

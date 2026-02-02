@@ -96,6 +96,12 @@ fn sample_intersection_area(
 /// A flat-top hexagon has vertices at angles 30°, 90°, 150°, 210°, 270°, 330°
 /// (i.e., rotated 30° from a pointy-top hexagon).
 pub fn point_in_flat_top_hexagon(point: Vec2, center: Vec2, radius: f32) -> bool {
+    signed_distance_to_flat_top_hexagon(point, center, radius) <= 0.0
+}
+
+/// Returns the signed distance from a point to a flat-top hexagon.
+/// Negative values mean the point is inside, positive means outside.
+fn signed_distance_to_flat_top_hexagon(point: Vec2, center: Vec2, radius: f32) -> f32 {
     let rel = point - center;
     let dx = rel.x.abs();
     let dy = rel.y.abs();
@@ -103,15 +109,36 @@ pub fn point_in_flat_top_hexagon(point: Vec2, center: Vec2, radius: f32) -> bool
     // Inner radius (apothem) for flat-top hex = radius * sqrt(3) / 2
     let inner_radius = radius * 3.0_f32.sqrt() / 2.0;
 
-    // Quick rejection: outside bounding box
-    if dx > radius || dy > inner_radius {
-        return false;
-    }
+    // For a flat-top hex, we check three half-planes:
+    // 1. Right edge: x <= radius
+    // 2. Top/bottom edges: y <= inner_radius
+    // 3. Diagonal edges: dx * inner_radius + dy * (radius / 2) <= radius * inner_radius
 
-    // Check the angled edges using the hexagon's geometry.
-    // For a flat-top hex, the diagonal edges satisfy:
-    // dx * inner_radius + dy * (radius / 2) <= radius * inner_radius
-    dx * inner_radius + dy * radius / 2.0 <= radius * inner_radius
+    // Distance to each constraint (positive = outside)
+    let dist_right = dx - radius;
+    let dist_top = dy - inner_radius;
+
+    // For the diagonal edge, normalize the constraint equation
+    // The edge normal has components (inner_radius, radius/2), normalize it
+    let diag_normal_len = (inner_radius * inner_radius + (radius / 2.0) * (radius / 2.0)).sqrt();
+    let dist_diagonal =
+        (dx * inner_radius + dy * radius / 2.0 - radius * inner_radius) / diag_normal_len;
+
+    // Return the maximum distance (most constraining)
+    dist_right.max(dist_top).max(dist_diagonal)
+}
+
+/// Check if a circle intersects with a flat-top hexagon.
+/// Returns true if any part of the circle overlaps with the hexagon.
+pub fn circle_intersects_flat_top_hexagon(
+    circle_center: Vec2,
+    circle_radius: f32,
+    hex_center: Vec2,
+    hex_radius: f32,
+) -> bool {
+    // The circle intersects the hex if the signed distance from
+    // the circle center to the hex is less than the circle radius
+    signed_distance_to_flat_top_hexagon(circle_center, hex_center, hex_radius) < circle_radius
 }
 
 /// Returns the percentage of the circle that overlaps with the hexagon (0.0 to 1.0).
@@ -192,7 +219,7 @@ mod tests {
         assert!(!aabb_intersects(
             Vec2::new(0.0, 0.0),
             10.0,
-            Vec2::new(200.0, 200.0),
+            Vec2::new(45.0, 0.0),
             35.0
         ));
     }

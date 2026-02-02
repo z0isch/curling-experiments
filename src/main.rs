@@ -121,8 +121,8 @@ fn setup(
         stone_velocity_magnitude: level.stone_velocity_magnitude,
         stone_facing: level.facing.clone(),
         min_sweep_distance: 2.0,
-        hex_radius: 15.0,
-        stone_radius: 20.0,
+        hex_radius: 20.0,
+        stone_radius: 10.0,
     };
 
     commands.spawn(Camera2d);
