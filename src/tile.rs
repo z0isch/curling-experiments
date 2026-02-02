@@ -403,13 +403,14 @@ pub fn compute_tile_effects(
     let mut total_drag: f32 = 0.0;
 
     for &(tile_type, tile_world_pos) in tiles {
-        // Check if any part of the stone circle overlaps with this hex tile
-        if !intersection::circle_intersects_flat_top_hexagon(
+        let ratio = intersection::ratio_circle_area_inside_hexagon(
             stone_pos,
             stone_radius,
             tile_world_pos,
             hex_grid.hex_radius - 2.,
-        ) {
+            64,
+        );
+        if ratio < 0.10 {
             continue;
         }
         match tile_type {
@@ -420,21 +421,21 @@ pub fn compute_tile_effects(
                 new_velocity -= 2.0 * dot * wall_normal;
             }
             TileType::MaintainSpeed => {
-                total_drag += drag_coefficient;
+                total_drag += drag_coefficient * ratio;
             }
             TileType::SlowDown => {
-                total_drag += drag_coefficient * 100.0;
+                total_drag += drag_coefficient * ratio * 100.0;
             }
             TileType::TurnCounterclockwise => {
-                rotation_angle += 0.017; // ~1 degree per frame
-                total_drag += drag_coefficient;
+                rotation_angle += 0.017 * ratio; // ~1 degree per frame
+                total_drag += drag_coefficient * ratio;
             }
             TileType::TurnClockwise => {
-                rotation_angle -= 0.017; // clockwise = negative
-                total_drag += drag_coefficient;
+                rotation_angle -= 0.017 * ratio; // clockwise = negative
+                total_drag += drag_coefficient * ratio;
             }
             TileType::Goal => {
-                total_drag += drag_coefficient;
+                total_drag += drag_coefficient * ratio;
             }
         }
     }

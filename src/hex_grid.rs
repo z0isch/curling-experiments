@@ -196,8 +196,6 @@ pub struct Level {
 
 pub fn get_initial_stone_velocity(facing: &Facing, stone_velocity_magnitude: &f32) -> Vec2 {
     use std::f32::consts::{FRAC_PI_2, FRAC_PI_3, FRAC_PI_6};
-    // For flat-top hexagon, 6 directions are 60° (π/3) apart
-    // Vec2::from_angle(0) points right (+X), angles increase counter-clockwise
     let angle = match facing {
         Facing::Up => FRAC_PI_2,                    // 90° - straight up
         Facing::UpRight => FRAC_PI_6,               // 30° - up and right
