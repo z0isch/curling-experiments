@@ -44,6 +44,7 @@ pub fn update_stone_position(
 }
 
 /// Checks if two stones collide and returns their new velocities if they do.
+/// Uses proper 2D elastic collision physics with momentum conservation.
 /// Returns None if no collision occurs.
 pub fn resolve_collision(
     pos1: Vec2,
@@ -53,17 +54,50 @@ pub fn resolve_collision(
     vel2: &Velocity,
     radius2: f32,
 ) -> Option<(Velocity, Velocity)> {
-    let should_collide = (radius1 + radius2).powi(2) > pos1.distance_squared(pos2);
+    let distance_squared = pos1.distance_squared(pos2);
+    let min_distance = radius1 + radius2;
 
-    if should_collide {
-        if vel2.0.length_squared() > 0.0 {
-            Some((vel2.clone(), Velocity(Vec2::ZERO)))
-        } else {
-            Some((Velocity(Vec2::ZERO), vel1.clone()))
-        }
-    } else {
-        None
+    // Check if circles are overlapping
+    if distance_squared >= min_distance * min_distance {
+        return None;
     }
+
+    // Calculate collision normal (from stone1 to stone2)
+    let collision_normal = (pos2 - pos1).normalize_or_zero();
+
+    // If stones are at the exact same position, use a default direction
+    let collision_normal = if collision_normal == Vec2::ZERO {
+        Vec2::X
+    } else {
+        collision_normal
+    };
+
+    // Calculate relative velocity
+    let relative_velocity = vel1.0 - vel2.0;
+
+    // Calculate relative velocity along the collision normal
+    let velocity_along_normal = relative_velocity.dot(collision_normal);
+
+    // Only resolve if stones are approaching each other
+    if velocity_along_normal <= 0.0 {
+        return None;
+    }
+
+    // Coefficient of restitution (1.0 = perfectly elastic, 0.0 = perfectly inelastic)
+    // Curling stones have fairly elastic collisions
+    let restitution = 0.85;
+
+    // Calculate impulse scalar (assuming equal mass for both stones)
+    // For equal masses: impulse = (1 + e) * v_rel_normal / 2
+    let impulse_scalar = (1.0 + restitution) * velocity_along_normal / 2.0;
+
+    // Apply impulse to both stones
+    let impulse = impulse_scalar * collision_normal;
+
+    let new_vel1 = Velocity(vel1.0 - impulse);
+    let new_vel2 = Velocity(vel2.0 + impulse);
+
+    Some((new_vel1, new_vel2))
 }
 
 pub fn apply_stone_collision(mut stone_query: Query<(&Stone, &mut Velocity, &Transform)>) {
