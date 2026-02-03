@@ -36,7 +36,7 @@ pub fn debug_ui(mut contexts: EguiContexts, mut debug_ui_state: ResMut<DebugUISt
                     .text("Stone Radius"),
             );
             debug_ui.add(
-                egui::Slider::new(&mut debug_ui_state.min_sweep_distance, 0.0..=200.0)
+                egui::Slider::new(&mut debug_ui_state.min_sweep_distance, 0.0..=400.0)
                     .text("Min Sweep Distance"),
             );
             debug_ui.add(
