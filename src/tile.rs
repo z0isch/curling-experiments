@@ -136,9 +136,10 @@ pub struct TileCoordinateText;
 
 #[derive(Component, Debug)]
 pub struct TileDragging {
-    pub last_position: Vec2,
+    pub last_position: Option<Vec2>,
     pub distance_dragged: f32,
     pub tile_type: TileType,
+    pub last_keyboard_input: Option<KeyCode>,
 }
 
 #[derive(Component)]
@@ -182,28 +183,6 @@ impl TileAssets {
 // ============================================================================
 // Systems
 // ============================================================================
-
-/// System to change tile type based on keyboard input when hovering over a tile
-pub fn change_tile_type(
-    input: Res<ButtonInput<KeyCode>>,
-    mut tile_type: Single<&mut TileType, With<MouseHover>>,
-) {
-    if **tile_type == TileType::Goal {
-        return;
-    }
-    if input.just_pressed(KeyCode::KeyW) {
-        **tile_type = TileType::MaintainSpeed;
-    }
-    if input.just_pressed(KeyCode::KeyA) {
-        **tile_type = TileType::TurnClockwise;
-    }
-    if input.just_pressed(KeyCode::KeyD) {
-        **tile_type = TileType::TurnCounterclockwise;
-    }
-    if input.just_pressed(KeyCode::KeyS) {
-        **tile_type = TileType::SlowDown;
-    }
-}
 
 /// On pressing the `~` key, toggle the visibility of the tile coordinates
 pub fn toggle_tile_coordinates(
@@ -322,12 +301,13 @@ pub fn on_tile_drag_enter(
     current_drag_tile_type: Res<CurrentDragTileType>,
 ) {
     if let Ok(Some(mut tile_dragging)) = tile_dragging_q.get_mut(drag_enter.entity) {
-        tile_dragging.last_position = drag_enter.pointer_location.position;
+        tile_dragging.last_position = Some(drag_enter.pointer_location.position);
     } else {
         commands.entity(drag_enter.entity).insert(TileDragging {
-            last_position: drag_enter.pointer_location.position,
+            last_position: Some(drag_enter.pointer_location.position),
             distance_dragged: 0.0,
             tile_type: current_drag_tile_type.0.clone(),
+            last_keyboard_input: None,
         });
     }
 }
@@ -339,8 +319,10 @@ pub fn on_tile_dragging(
     if *tile.1 == TileType::Goal || *tile.1 == TileType::Wall {
         return;
     }
-    tile.0.distance_dragged += (drag.pointer_location.position - tile.0.last_position).length();
-    tile.0.last_position = drag.pointer_location.position;
+    if let Some(last_position) = tile.0.last_position {
+        tile.0.distance_dragged += (drag.pointer_location.position - last_position).length();
+        tile.0.last_position = Some(drag.pointer_location.position);
+    }
 }
 
 // ============================================================================

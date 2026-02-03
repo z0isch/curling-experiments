@@ -107,4 +107,3 @@ pub fn update_countdown(
         }
     }
 }
-
