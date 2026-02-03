@@ -20,7 +20,7 @@ use stone::{
     Stone, Velocity, apply_tile_velocity_effects, resolve_collision, stone, update_stone_position,
 };
 use tile::{
-    CurrentDragTileType, ScratchOffMaterial, TileAssets, TileType, change_tile_type,
+    CurrentDragTileType, ScratchOffMaterial, TileAssets, TileDragging, TileType, change_tile_type,
     compute_tile_effects, toggle_tile_coordinates,
 };
 
@@ -279,7 +279,7 @@ fn draw_move_line(
     grid: Single<&HexGrid>,
     debug_ui_state: Res<DebugUIState>,
     stones: Query<(&Stone, &Velocity, &Transform)>,
-    tiles: Query<(&TileType, &Transform), Without<Stone>>,
+    tiles: Query<(&TileType, &Transform, Option<&TileDragging>), Without<Stone>>,
     lines: Query<Entity, With<StoneMoveLine>>,
     fixed_time: Res<Time<Fixed>>,
 ) {
@@ -287,10 +287,13 @@ fn draw_move_line(
         commands.entity(l).despawn();
     }
 
-    // Collect tile data for trajectory simulation
+    // Collect tile data for trajectory simulation (including dragging state)
     let tile_data: Vec<_> = tiles
         .iter()
-        .map(|(tile_type, transform)| (tile_type, transform.translation.truncate()))
+        .map(|(tile_type, transform, tile_dragging)| {
+            let position = transform.translation.truncate();
+            (tile_type, position, tile_dragging)
+        })
         .collect();
 
     // Collect all stone data for multi-stone simulation
@@ -314,6 +317,7 @@ fn draw_move_line(
         fixed_time.delta_secs(),
         debug_ui_state.slow_down_factor,
         debug_ui_state.rotation_factor,
+        debug_ui_state.min_sweep_distance,
     );
 
     for trajectory in trajectories {
@@ -334,12 +338,13 @@ fn draw_move_line(
 /// 3. apply_tile_velocity_effects (update velocity)
 fn simulate_trajectories(
     stone_data: &[(Vec2, Velocity, f32)], // (position, velocity, radius)
-    tile_data: &[(&TileType, Vec2)],
+    tile_data: &[(&TileType, Vec2, Option<&TileDragging>)],
     hex_grid: &HexGrid,
     drag_coefficient: f32,
     fixed_dt: f32,
     slow_down_factor: f32,
     rotation_factor: f32,
+    min_sweep_distance: f32,
 ) -> Vec<Vec<Vec2>> {
     const MIN_VELOCITY: f32 = 1.0; // Stop when velocity is very low
     const LINE_SEGMENT_SAMPLES: usize = 3;
@@ -400,6 +405,7 @@ fn simulate_trajectories(
                 *radius,
                 slow_down_factor,
                 rotation_factor,
+                min_sweep_distance,
             );
         }
     }

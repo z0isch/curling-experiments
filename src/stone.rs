@@ -2,7 +2,7 @@ use bevy::prelude::*;
 
 use crate::DebugUIState;
 use crate::hex_grid::{HexCoordinate, HexGrid, hex_to_world};
-use crate::tile::{TileType, compute_tile_effects};
+use crate::tile::{TileDragging, TileType, compute_tile_effects};
 
 #[derive(Component, Clone, Debug)]
 pub struct Stone {
@@ -157,14 +157,17 @@ pub fn apply_stone_collision(mut stone_query: Query<(&Stone, &mut Velocity, &Tra
 /// System that modifies stone velocity based on tile types it overlaps with.
 pub fn apply_tile_velocity_effects(
     stone_query: Query<(&Stone, &mut Velocity, &Transform)>,
-    tiles: Query<(&TileType, &Transform), Without<Stone>>,
+    tiles: Query<(&TileType, &Transform, Option<&TileDragging>), Without<Stone>>,
     grid: Single<&HexGrid>,
     debug_ui_state: Res<DebugUIState>,
 ) {
     for (stone, mut velocity, transform) in stone_query {
         let tile_data: Vec<_> = tiles
             .iter()
-            .map(|(tile_type, transform)| (tile_type, transform.translation.truncate()))
+            .map(|(tile_type, transform, tile_dragging)| {
+                let position = transform.translation.truncate();
+                (tile_type, position, tile_dragging)
+            })
             .collect();
 
         *velocity = compute_tile_effects(
@@ -176,6 +179,7 @@ pub fn apply_tile_velocity_effects(
             stone.radius,
             debug_ui_state.slow_down_factor,
             debug_ui_state.rotation_factor,
+            debug_ui_state.min_sweep_distance,
         );
     }
 }

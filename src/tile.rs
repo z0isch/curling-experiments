@@ -376,26 +376,30 @@ fn hex_edge_normal(relative_pos: Vec2) -> Vec2 {
 
 /// Computes the new velocity after applying all tile effects at the given position.
 /// This is the core physics logic shared by both real-time simulation and trajectory prediction.
+///
+/// When a tile is being dragged, the effects are blended between the current tile type
+/// and the target tile type based on the drag progress.
 pub fn compute_tile_effects(
     stone_pos: Vec2,
     velocity: &crate::stone::Velocity,
-    tiles: &[(&TileType, Vec2)],
+    tiles: &[(&TileType, Vec2, Option<&TileDragging>)],
     hex_grid: &HexGrid,
     drag_coefficient: f32,
     stone_radius: f32,
     slow_down_factor: f32,
     rotation_factor: f32,
+    min_sweep_distance: f32,
 ) -> crate::stone::Velocity {
     let mut new_velocity = velocity.0;
 
     let mut rotation_angle: f32 = 0.0;
     let mut total_drag: f32 = 0.0;
 
-    for &(tile_type, tile_world_pos) in tiles {
+    for (tile_type, tile_position, maybe_dragging) in tiles {
         let ratio = intersection::ratio_circle_area_inside_hexagon(
             stone_pos,
             stone_radius,
-            tile_world_pos,
+            *tile_position,
             hex_grid.hex_radius - 2.,
             60,
         );
@@ -403,49 +407,79 @@ pub fn compute_tile_effects(
             continue;
         }
 
-        match tile_type {
-            TileType::Wall => {
-                // Use proper hexagon edge normal instead of radial direction
-                let wall_normal = hex_edge_normal(stone_pos - tile_world_pos);
-                let dot = new_velocity.dot(wall_normal);
-                // Only reflect if moving toward the wall
-                if dot < 0.0 {
-                    // Store original speed to preserve magnitude after reflection
-                    let original_speed = new_velocity.length();
-                    new_velocity -= 2.0 * dot * wall_normal;
-                    // Re-normalize to original speed to prevent floating-point drift
-                    let new_speed = new_velocity.length();
-                    if new_speed > 1e-10 {
-                        new_velocity *= original_speed / new_speed;
+        // Calculate weights for blending between current type and drag target type
+        let (current_weight, drag_weight, drag_tile_type) = match *maybe_dragging {
+            Some(dragging) => {
+                let progress = if min_sweep_distance > 0.0 {
+                    (dragging.distance_dragged / min_sweep_distance).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                (1.0 - progress, progress, Some(&dragging.tile_type))
+            }
+            None => (1.0, 0.0, None),
+        };
+
+        // Helper closure to apply effects for a single tile type with a given weight
+        let mut apply_tile_effect = |tile_type: &TileType, weight: f32| {
+            if weight < 0.001 {
+                return;
+            }
+            let weighted_ratio = ratio * weight;
+
+            match tile_type {
+                TileType::Wall => {
+                    // Use proper hexagon edge normal instead of radial direction
+                    let wall_normal = hex_edge_normal(stone_pos - tile_position);
+                    let dot = new_velocity.dot(wall_normal);
+                    // Only reflect if moving toward the wall
+                    if dot < 0.0 {
+                        // Store original speed to preserve magnitude after reflection
+                        let original_speed = new_velocity.length();
+                        // Apply partial reflection based on weight
+                        new_velocity -= 2.0 * dot * wall_normal * weight;
+                        // Re-normalize to original speed to prevent floating-point drift
+                        let new_speed = new_velocity.length();
+                        if new_speed > 1e-10 {
+                            new_velocity *= original_speed / new_speed;
+                        }
                     }
                 }
-            }
-            TileType::MaintainSpeed => {
-                total_drag += drag_coefficient * ratio;
-            }
-            TileType::SlowDown => {
-                total_drag += drag_coefficient * ratio * slow_down_factor;
-            }
-            TileType::TurnCounterclockwise => {
-                rotation_angle += rotation_factor * ratio; // ~1 degree per frame
-                total_drag += drag_coefficient * ratio;
-            }
-            TileType::TurnClockwise => {
-                rotation_angle -= rotation_factor * ratio; // clockwise = negative
-                total_drag += drag_coefficient * ratio;
-            }
-            TileType::Goal => {
-                // Pull towards the center of the goal
-                let to_center = tile_world_pos - stone_pos;
-                let distance = to_center.length();
-                if distance > 1e-10 {
-                    let direction = to_center / distance;
-                    // Pull strength proportional to how much of stone is inside
-                    let pull_strength = 0.5 * ratio;
-                    new_velocity += direction * pull_strength;
+                TileType::MaintainSpeed => {
+                    total_drag += drag_coefficient * weighted_ratio;
                 }
-                total_drag += drag_coefficient * slow_down_factor * ratio;
+                TileType::SlowDown => {
+                    total_drag += drag_coefficient * weighted_ratio * slow_down_factor;
+                }
+                TileType::TurnCounterclockwise => {
+                    rotation_angle += rotation_factor * weighted_ratio;
+                    total_drag += drag_coefficient * weighted_ratio;
+                }
+                TileType::TurnClockwise => {
+                    rotation_angle -= rotation_factor * weighted_ratio;
+                    total_drag += drag_coefficient * weighted_ratio;
+                }
+                TileType::Goal => {
+                    // Pull towards the center of the goal
+                    let to_center = tile_position - stone_pos;
+                    let distance = to_center.length();
+                    if distance > 1e-10 {
+                        let direction = to_center / distance;
+                        // Pull strength proportional to how much of stone is inside
+                        let pull_strength = 0.5 * weighted_ratio;
+                        new_velocity += direction * pull_strength;
+                    }
+                    total_drag += drag_coefficient * slow_down_factor * weighted_ratio;
+                }
             }
+        };
+
+        // Apply effects from the current tile type
+        apply_tile_effect(tile_type, current_weight);
+
+        // Apply effects from the drag target type (if dragging)
+        if let Some(drag_type) = drag_tile_type {
+            apply_tile_effect(drag_type, drag_weight);
         }
     }
 
