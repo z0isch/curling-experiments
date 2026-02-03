@@ -139,6 +139,7 @@ pub struct TileDragging {
     pub last_position: Vec2,
     pub distance_dragged: f32,
     pub tile_type: TileType,
+    pub last_keyboard_input: Option<KeyCode>,
 }
 
 #[derive(Component)]
@@ -182,28 +183,6 @@ impl TileAssets {
 // ============================================================================
 // Systems
 // ============================================================================
-
-/// System to change tile type based on keyboard input when hovering over a tile
-pub fn change_tile_type(
-    input: Res<ButtonInput<KeyCode>>,
-    mut tile_type: Single<&mut TileType, With<MouseHover>>,
-) {
-    if **tile_type == TileType::Goal {
-        return;
-    }
-    if input.just_pressed(KeyCode::KeyW) {
-        **tile_type = TileType::MaintainSpeed;
-    }
-    if input.just_pressed(KeyCode::KeyA) {
-        **tile_type = TileType::TurnClockwise;
-    }
-    if input.just_pressed(KeyCode::KeyD) {
-        **tile_type = TileType::TurnCounterclockwise;
-    }
-    if input.just_pressed(KeyCode::KeyS) {
-        **tile_type = TileType::SlowDown;
-    }
-}
 
 /// On pressing the `~` key, toggle the visibility of the tile coordinates
 pub fn toggle_tile_coordinates(
@@ -328,6 +307,7 @@ pub fn on_tile_drag_enter(
             last_position: drag_enter.pointer_location.position,
             distance_dragged: 0.0,
             tile_type: current_drag_tile_type.0.clone(),
+            last_keyboard_input: None,
         });
     }
 }

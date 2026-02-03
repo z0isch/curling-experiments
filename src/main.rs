@@ -22,7 +22,7 @@ use stone::{
     Stone, Velocity, apply_tile_velocity_effects, resolve_collision, stone, update_stone_position,
 };
 use tile::{
-    CurrentDragTileType, ScratchOffMaterial, TileAssets, TileDragging, TileType, change_tile_type,
+    CurrentDragTileType, ScratchOffMaterial, TileAssets, TileDragging, TileType,
     compute_tile_effects, toggle_tile_coordinates,
 };
 
@@ -30,7 +30,7 @@ use crate::{
     debug_ui::on_debug_ui_level_change,
     level::{CurrentLevel, get_initial_stone_velocity, get_level},
     stone::apply_stone_collision,
-    tile::{update_tile_material, update_tile_type},
+    tile::{MouseHover, update_tile_material, update_tile_type},
     ui::{
         CountdownUI, spawn_broom_type_ui, spawn_countdown, update_broom_type_ui, update_countdown,
     },
@@ -84,7 +84,6 @@ fn main() {
         .add_systems(
             Update,
             (
-                change_tile_type,
                 draw_move_line,
                 update_tile_type,
                 toggle_physics_pause,
@@ -93,6 +92,7 @@ fn main() {
                 update_countdown,
                 switch_broom,
                 update_broom_type_ui,
+                drag_with_keyboard,
             )
                 .in_set(MainUpdateSystems),
         )
@@ -409,4 +409,35 @@ fn simulate_trajectories(
     }
 
     trajectories
+}
+
+fn drag_with_keyboard(
+    mut commands: Commands,
+    input: Res<ButtonInput<KeyCode>>,
+    current_drag_tile_type: Res<CurrentDragTileType>,
+    tile_query: Single<(Entity, Option<&mut TileDragging>), With<MouseHover>>,
+) {
+    if let Some(just_pressed) = input.get_just_pressed().next() {
+        let (entity, tile_dragging_opt) = tile_query.into_inner();
+
+        match tile_dragging_opt {
+            Some(mut tile_dragging) => {
+                if let Some(last_key_pressed) =
+                    tile_dragging.last_keyboard_input.replace(*just_pressed)
+                    && last_key_pressed != *just_pressed
+                {
+                    tile_dragging.distance_dragged += 50.;
+                }
+            }
+            None => {
+                // Insert new TileDragging component
+                commands.entity(entity).insert(TileDragging {
+                    last_position: Vec2::ZERO,
+                    distance_dragged: 0.0,
+                    tile_type: current_drag_tile_type.0.clone(),
+                    last_keyboard_input: Some(*just_pressed),
+                });
+            }
+        }
+    }
 }
