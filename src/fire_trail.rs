@@ -86,6 +86,7 @@ pub fn spawn_fire_trail(
                 // Stretch along motion to look flamey (not circular)
                 scale: Vec3::new(2.2 + 3.2 * t, 0.28, 1.0),
             },
+            Pickable::IGNORE,
         ));
 
         // --- Hot core streak (yellow/white), often ---
@@ -108,6 +109,7 @@ pub fn spawn_fire_trail(
                     rotation: Quat::from_rotation_z(angle),
                     scale: Vec3::new(1.6 + 2.2 * t, 0.22, 1.0),
                 },
+                Pickable::IGNORE,
             ));
         }
 
@@ -130,6 +132,7 @@ pub fn spawn_fire_trail(
                 Mesh2d(meshes.add(Circle::new(ember_r))),
                 MeshMaterial2d(materials.add(ember_color)),
                 Transform::from_xyz(base_x + sx, base_y + sy, 2.02),
+                Pickable::IGNORE,
             ));
         }
     }

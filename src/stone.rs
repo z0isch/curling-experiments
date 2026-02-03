@@ -35,6 +35,7 @@ pub fn stone(
         Mesh2d(stone_mesh),
         MeshMaterial2d(black_material),
         Transform::from_xyz(stone_world_pos.x, stone_world_pos.y, 3.0),
+        Pickable::IGNORE,
     )
 }
 
