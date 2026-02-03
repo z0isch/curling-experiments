@@ -5,6 +5,7 @@ mod intersection;
 mod level;
 mod stone;
 mod tile;
+mod ui;
 
 use bevy::prelude::*;
 use bevy::sprite_render::Material2dPlugin;
@@ -30,22 +31,18 @@ use crate::{
     level::{CurrentLevel, get_initial_stone_velocity, get_level},
     stone::apply_stone_collision,
     tile::{update_tile_material, update_tile_type},
+    ui::{
+        CountdownUI, spawn_broom_type_ui, spawn_countdown, update_broom_type_ui, update_countdown,
+    },
 };
 
 #[derive(Component)]
 struct StoneMoveLine;
-
-#[derive(Component)]
-struct CountdownText;
-
 #[derive(Resource)]
 pub struct Countdown {
     pub timer: Timer,
     pub count: u32,
 }
-
-#[derive(Component)]
-pub struct CountdownUI;
 
 #[derive(Resource, Default)]
 pub struct PhysicsPaused(pub bool);
@@ -95,6 +92,7 @@ fn main() {
                 update_tile_material,
                 update_countdown,
                 switch_broom,
+                update_broom_type_ui,
             )
                 .in_set(MainUpdateSystems),
         )
@@ -158,6 +156,7 @@ fn setup(
     commands.insert_resource(debug_ui_state);
     commands.insert_resource(CurrentDragTileType(TileType::MaintainSpeed));
 
+    spawn_broom_type_ui(&mut commands);
     spawn_countdown(&mut commands, level.countdown);
     commands.insert_resource(Countdown {
         timer: Timer::from_seconds(1.0, TimerMode::Repeating),
@@ -169,66 +168,6 @@ fn setup(
 fn toggle_physics_pause(input: Res<ButtonInput<KeyCode>>, mut paused: ResMut<PhysicsPaused>) {
     if input.just_pressed(KeyCode::Space) {
         paused.0 = !paused.0;
-    }
-}
-
-fn spawn_countdown(commands: &mut Commands, countdown: u32) {
-    commands
-        .spawn((
-            Node {
-                width: Val::Percent(100.0),
-                height: Val::Percent(100.0),
-                justify_content: JustifyContent::Center,
-                align_items: AlignItems::Center,
-                ..default()
-            },
-            Pickable::IGNORE,
-            CountdownUI,
-        ))
-        .with_children(|parent| {
-            parent.spawn((
-                CountdownText,
-                Text::new(countdown.to_string()),
-                TextFont {
-                    font_size: 120.0,
-                    ..default()
-                },
-                TextColor(Color::srgba(1.0, 0.9, 0.2, 0.9)),
-                Pickable::IGNORE,
-            ));
-        });
-}
-
-/// System that updates the countdown and starts physics when it reaches zero
-fn update_countdown(
-    mut commands: Commands,
-    time: Res<Time>,
-    mut countdown: ResMut<Countdown>,
-    mut paused: ResMut<PhysicsPaused>,
-    mut text_query: Query<&mut Text, With<CountdownText>>,
-    mut countdown_ui_query: Query<Entity, With<CountdownUI>>,
-) {
-    // Only run countdown while physics is paused and countdown is active
-    if !paused.0 || countdown.count == 0 {
-        return;
-    }
-
-    countdown.timer.tick(time.delta());
-
-    if countdown.timer.just_finished() {
-        countdown.count = countdown.count.saturating_sub(1);
-
-        if countdown.count == 0 {
-            for entity in &mut countdown_ui_query {
-                commands.entity(entity).despawn();
-            }
-            paused.0 = false;
-        } else {
-            // Update the countdown text
-            for mut text in &mut text_query {
-                **text = countdown.count.to_string();
-            }
-        }
     }
 }
 
