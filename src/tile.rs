@@ -138,6 +138,7 @@ pub struct TileCoordinateText;
 pub struct TileDragging {
     pub last_position: Vec2,
     pub distance_dragged: f32,
+    pub tile_type: TileType,
 }
 
 #[derive(Component)]
@@ -146,6 +147,10 @@ pub struct MouseHover;
 // ============================================================================
 // Resources
 // ============================================================================
+
+/// Tracks the current tile type being used for dragging/painting
+#[derive(Resource)]
+pub struct CurrentDragTileType(pub TileType);
 
 #[derive(Resource)]
 pub struct TileAssets {
@@ -235,6 +240,7 @@ pub fn update_tile_material(
     children_query: Query<&Children>,
     _tile_assets: Res<TileAssets>,
     debug_ui_state: Res<DebugUIState>,
+    current_drag_tile_type: Res<CurrentDragTileType>,
     mut scratch_materials: ResMut<Assets<ScratchOffMaterial>>,
     fill_query: Query<&MeshMaterial2d<ScratchOffMaterial>, With<TileFill>>,
 ) {
@@ -264,12 +270,19 @@ pub fn update_tile_material(
             linear_progress * 0.50
         };
 
+        // Get the reveal color from either the tile's dragging state or the current drag tile type
+        let reveal_tile_type = tile_dragging
+            .map(|d| &d.tile_type)
+            .unwrap_or(&current_drag_tile_type.0);
+        let reveal_color = get_tile_color(reveal_tile_type).to_linear();
+
         for child in children.iter() {
             // Update scratch-off material properties
             if let Ok(mesh_material) = fill_query.get(child)
                 && let Some(material) = scratch_materials.get_mut(&mesh_material.0)
             {
                 material.progress = display_progress;
+                material.reveal_color = reveal_color;
             }
         }
     }
@@ -281,7 +294,7 @@ pub fn update_tile_type(
 ) {
     for (tile_dragging, mut tile_type) in tiles {
         if tile_dragging.distance_dragged > debug_ui_state.min_sweep_distance {
-            *tile_type = TileType::MaintainSpeed;
+            *tile_type = tile_dragging.tile_type.clone();
         }
     }
 }
@@ -302,6 +315,7 @@ pub fn on_tile_drag_enter(
     drag_enter: On<Pointer<DragEnter>>,
     mut commands: Commands,
     mut tile_dragging_q: Query<Option<&mut TileDragging>>,
+    current_drag_tile_type: Res<CurrentDragTileType>,
 ) {
     if let Ok(Some(mut tile_dragging)) = tile_dragging_q.get_mut(drag_enter.entity) {
         tile_dragging.last_position = drag_enter.pointer_location.position;
@@ -309,6 +323,7 @@ pub fn on_tile_drag_enter(
         commands.entity(drag_enter.entity).insert(TileDragging {
             last_position: drag_enter.pointer_location.position,
             distance_dragged: 0.0,
+            tile_type: current_drag_tile_type.0.clone(),
         });
     }
 }

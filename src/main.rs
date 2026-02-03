@@ -20,8 +20,8 @@ use stone::{
     Stone, Velocity, apply_tile_velocity_effects, resolve_collision, stone, update_stone_position,
 };
 use tile::{
-    ScratchOffMaterial, TileAssets, TileType, change_tile_type, compute_tile_effects,
-    toggle_tile_coordinates,
+    CurrentDragTileType, ScratchOffMaterial, TileAssets, TileType, change_tile_type,
+    compute_tile_effects, toggle_tile_coordinates,
 };
 
 use crate::{
@@ -144,6 +144,7 @@ fn setup(
 
     commands.insert_resource(tile_assets);
     commands.insert_resource(debug_ui_state);
+    commands.insert_resource(CurrentDragTileType(TileType::MaintainSpeed));
 
     spawn_countdown(&mut commands);
     commands.insert_resource(Countdown {
