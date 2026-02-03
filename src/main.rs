@@ -1,5 +1,6 @@
 mod debug_ui;
 mod fire_trail;
+mod mouse_trail;
 mod hex_grid;
 mod intersection;
 mod level;
@@ -17,6 +18,7 @@ use bevy_rand::{
 };
 use debug_ui::{DebugUIState, StoneUIConfig, debug_ui};
 use fire_trail::{spawn_fire_trail, update_fire_trail};
+use mouse_trail::{spawn_mouse_trail, update_mouse_trail, MouseTrailLine};
 use hex_grid::{HexGrid, spawn_hex_grid};
 use stone::{
     Stone, Velocity, apply_tile_velocity_effects, resolve_collision, stone, update_stone_position,
@@ -93,6 +95,8 @@ fn main() {
                 update_countdown,
                 switch_broom,
                 update_broom_type_ui,
+                spawn_mouse_trail,
+                update_mouse_trail,
             )
                 .in_set(MainUpdateSystems),
         )
@@ -193,6 +197,7 @@ pub fn restart_game_on_r_key_pressed(
     countdown_ui_query: Query<Entity, With<CountdownUI>>,
     debug_ui_state: Res<DebugUIState>,
     stone_query: Query<Entity, With<Stone>>,
+    mouse_trail_query: Query<Entity, With<MouseTrailLine>>,
     paused: ResMut<PhysicsPaused>,
     countdown: ResMut<Countdown>,
     meshes: ResMut<Assets<Mesh>>,
@@ -206,6 +211,7 @@ pub fn restart_game_on_r_key_pressed(
             countdown_ui_query,
             debug_ui_state,
             stone_query,
+            mouse_trail_query,
             paused,
             countdown,
             meshes,
@@ -221,6 +227,7 @@ pub fn restart_game(
     countdown_ui_query: Query<Entity, With<CountdownUI>>,
     debug_ui_state: Res<DebugUIState>,
     stone_query: Query<Entity, With<Stone>>,
+    mouse_trail_query: Query<Entity, With<MouseTrailLine>>,
     mut paused: ResMut<PhysicsPaused>,
     mut countdown: ResMut<Countdown>,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -229,6 +236,10 @@ pub fn restart_game(
 ) {
     paused.0 = true;
     let level = get_level(debug_ui_state.current_level);
+    // Despawn any existing mouse trail line(s)
+    for entity in mouse_trail_query.iter() {
+        commands.entity(entity).despawn();
+    }
 
     commands.entity(*grid).despawn();
 

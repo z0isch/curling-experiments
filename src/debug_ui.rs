@@ -6,6 +6,7 @@ use crate::{
     hex_grid::HexGrid,
     level::{CurrentLevel, Facing},
     restart_game,
+    mouse_trail::MouseTrailLine,
     stone::Stone,
     tile::ScratchOffMaterial,
 };
@@ -115,6 +116,7 @@ pub fn on_debug_ui_level_change(
     grid: Single<Entity, With<HexGrid>>,
     countdown_ui_query: Query<Entity, With<CountdownUI>>,
     stone_query: Query<Entity, With<Stone>>,
+    mouse_trail_query: Query<Entity, With<MouseTrailLine>>,
     paused: ResMut<PhysicsPaused>,
     countdown: ResMut<Countdown>,
     meshes: ResMut<Assets<Mesh>>,
@@ -131,6 +133,7 @@ pub fn on_debug_ui_level_change(
         countdown_ui_query,
         debug_ui_state,
         stone_query,
+        mouse_trail_query,
         paused,
         countdown,
         meshes,
