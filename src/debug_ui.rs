@@ -1,7 +1,14 @@
 use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 
-use crate::hex_grid::Facing;
+use crate::{
+    Countdown, CountdownUI, PhysicsPaused,
+    hex_grid::HexGrid,
+    level::{CurrentLevel, Facing},
+    restart_game,
+    stone::Stone,
+    tile::ScratchOffMaterial,
+};
 
 #[derive(Clone, Debug)]
 pub struct StoneUIConfig {
@@ -20,6 +27,7 @@ pub struct DebugUIState {
     pub rotation_factor: f32,
     pub snap_distance: f32,
     pub snap_velocity: f32,
+    pub current_level: CurrentLevel,
 }
 
 pub fn debug_ui(mut contexts: EguiContexts, mut debug_ui_state: ResMut<DebugUIState>) -> Result {
@@ -28,6 +36,20 @@ pub fn debug_ui(mut contexts: EguiContexts, mut debug_ui_state: ResMut<DebugUISt
         .show(contexts.ctx_mut()?, |debug_ui| {
             debug_ui.add(egui::Label::new("R to restart"));
             debug_ui.add(egui::Label::new("Space to pause/resume"));
+
+            debug_ui.separator();
+            debug_ui.add(egui::Label::new("Level Selection"));
+            egui::ComboBox::from_id_salt("level_selector")
+                .selected_text(format!("{}", debug_ui_state.current_level))
+                .show_ui(debug_ui, |debug_ui| {
+                    for level in CurrentLevel::iterator() {
+                        debug_ui.selectable_value(
+                            &mut debug_ui_state.current_level,
+                            *level,
+                            level.to_string(),
+                        );
+                    }
+                });
             debug_ui.add(
                 egui::Slider::new(&mut debug_ui_state.hex_radius, 10.0..=80.0).text("Hex Radius"),
             );
@@ -84,4 +106,35 @@ pub fn debug_ui(mut contexts: EguiContexts, mut debug_ui_state: ResMut<DebugUISt
             }
         });
     Ok(())
+}
+
+pub fn on_debug_ui_level_change(
+    mut maybe_old_level: Local<Option<CurrentLevel>>,
+    debug_ui_state: Res<DebugUIState>,
+    commands: Commands,
+    grid: Single<Entity, With<HexGrid>>,
+    countdown_ui_query: Query<Entity, With<CountdownUI>>,
+    stone_query: Query<Entity, With<Stone>>,
+    paused: ResMut<PhysicsPaused>,
+    countdown: ResMut<Countdown>,
+    meshes: ResMut<Assets<Mesh>>,
+    materials: ResMut<Assets<ColorMaterial>>,
+    scratch_materials: ResMut<Assets<ScratchOffMaterial>>,
+) {
+    let old_level = maybe_old_level.replace(debug_ui_state.current_level);
+    if old_level == Some(debug_ui_state.current_level) || old_level.is_none() {
+        return;
+    }
+    restart_game(
+        commands,
+        grid,
+        countdown_ui_query,
+        debug_ui_state,
+        stone_query,
+        paused,
+        countdown,
+        meshes,
+        materials,
+        scratch_materials,
+    );
 }

@@ -2,6 +2,7 @@ mod debug_ui;
 mod fire_trail;
 mod hex_grid;
 mod intersection;
+mod level;
 mod stone;
 mod tile;
 
@@ -25,7 +26,8 @@ use tile::{
 };
 
 use crate::{
-    hex_grid::{get_initial_stone_velocity, get_level},
+    debug_ui::on_debug_ui_level_change,
+    level::{CurrentLevel, get_initial_stone_velocity, get_level},
     stone::apply_stone_collision,
     tile::{update_tile_material, update_tile_type},
 };
@@ -43,7 +45,7 @@ pub struct Countdown {
 }
 
 #[derive(Component)]
-struct CountdownUI;
+pub struct CountdownUI;
 
 #[derive(Resource, Default)]
 pub struct PhysicsPaused(pub bool);
@@ -87,16 +89,23 @@ fn main() {
             (
                 change_tile_type,
                 draw_move_line,
-                restart_game,
                 update_tile_type,
                 toggle_physics_pause,
                 toggle_tile_coordinates,
                 update_tile_material,
                 update_countdown,
-            ),
+            )
+                .in_set(MainUpdateSystems),
+        )
+        .add_systems(
+            Update,
+            (restart_game_on_r_key_pressed, on_debug_ui_level_change).after(MainUpdateSystems),
         )
         .run();
 }
+
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct MainUpdateSystems;
 
 fn setup(
     mut commands: Commands,
@@ -105,7 +114,8 @@ fn setup(
     mut scratch_materials: ResMut<Assets<ScratchOffMaterial>>,
 ) {
     commands.insert_resource(PhysicsPaused(true));
-    let level = get_level();
+    let current_level = CurrentLevel::Level1;
+    let level = get_level(current_level);
     let debug_ui_state = DebugUIState {
         hex_radius: 60.0,
         stone_radius: 10.0,
@@ -115,6 +125,7 @@ fn setup(
         rotation_factor: 0.017,
         snap_distance: 40.0,
         snap_velocity: 40.0,
+        current_level,
         stone_configs: level
             .stone_configs
             .iter()
@@ -220,10 +231,37 @@ fn update_countdown(
     }
 }
 
-/// System that restarts the game when 'R' key is pressed
-fn restart_game(
-    mut commands: Commands,
+pub fn restart_game_on_r_key_pressed(
     input: Res<ButtonInput<KeyCode>>,
+    commands: Commands,
+    grid: Single<Entity, With<HexGrid>>,
+    countdown_ui_query: Query<Entity, With<CountdownUI>>,
+    debug_ui_state: Res<DebugUIState>,
+    stone_query: Query<Entity, With<Stone>>,
+    paused: ResMut<PhysicsPaused>,
+    countdown: ResMut<Countdown>,
+    meshes: ResMut<Assets<Mesh>>,
+    materials: ResMut<Assets<ColorMaterial>>,
+    scratch_materials: ResMut<Assets<ScratchOffMaterial>>,
+) {
+    if input.just_pressed(KeyCode::KeyR) {
+        restart_game(
+            commands,
+            grid,
+            countdown_ui_query,
+            debug_ui_state,
+            stone_query,
+            paused,
+            countdown,
+            meshes,
+            materials,
+            scratch_materials,
+        );
+    }
+}
+/// System that restarts the game when 'R' key is pressed
+pub fn restart_game(
+    mut commands: Commands,
     grid: Single<Entity, With<HexGrid>>,
     countdown_ui_query: Query<Entity, With<CountdownUI>>,
     debug_ui_state: Res<DebugUIState>,
@@ -234,42 +272,40 @@ fn restart_game(
     mut materials: ResMut<Assets<ColorMaterial>>,
     mut scratch_materials: ResMut<Assets<ScratchOffMaterial>>,
 ) {
-    if input.just_pressed(KeyCode::KeyR) {
-        paused.0 = true;
-        let level = get_level();
+    paused.0 = true;
+    let level = get_level(debug_ui_state.current_level);
 
-        commands.entity(*grid).despawn();
+    commands.entity(*grid).despawn();
 
-        let grid = HexGrid::new(debug_ui_state.hex_radius, &level);
-        let tile_assets = TileAssets::new(&mut meshes, &mut materials, &grid);
-        spawn_hex_grid(&mut commands, &grid, &tile_assets, &mut scratch_materials);
-        for stone_entity in stone_query {
-            commands.entity(stone_entity).despawn();
-        }
-        for (i, stone_config) in level.stone_configs.iter().enumerate() {
-            // Use UI config values if available, otherwise fall back to level defaults
-            let (facing, velocity_magnitude) =
-                if let Some(ui_config) = debug_ui_state.stone_configs.get(i) {
-                    (ui_config.facing.clone(), ui_config.velocity_magnitude)
-                } else {
-                    (stone_config.facing.clone(), stone_config.velocity_magnitude)
-                };
-            commands.spawn(stone(
-                &mut meshes,
-                &mut materials,
-                &grid,
-                &stone_config.start_coordinate,
-                get_initial_stone_velocity(&facing, &velocity_magnitude),
-                debug_ui_state.stone_radius,
-            ));
-        }
-        for entity in countdown_ui_query {
-            commands.entity(entity).despawn();
-        }
-        countdown.count = 3;
-        countdown.timer.reset();
-        spawn_countdown(&mut commands);
+    let grid = HexGrid::new(debug_ui_state.hex_radius, &level);
+    let tile_assets = TileAssets::new(&mut meshes, &mut materials, &grid);
+    spawn_hex_grid(&mut commands, &grid, &tile_assets, &mut scratch_materials);
+    for stone_entity in stone_query {
+        commands.entity(stone_entity).despawn();
     }
+    for (i, stone_config) in level.stone_configs.iter().enumerate() {
+        // Use UI config values if available, otherwise fall back to level defaults
+        let (facing, velocity_magnitude) =
+            if let Some(ui_config) = debug_ui_state.stone_configs.get(i) {
+                (ui_config.facing.clone(), ui_config.velocity_magnitude)
+            } else {
+                (stone_config.facing.clone(), stone_config.velocity_magnitude)
+            };
+        commands.spawn(stone(
+            &mut meshes,
+            &mut materials,
+            &grid,
+            &stone_config.start_coordinate,
+            get_initial_stone_velocity(&facing, &velocity_magnitude),
+            debug_ui_state.stone_radius,
+        ));
+    }
+    for entity in countdown_ui_query {
+        commands.entity(entity).despawn();
+    }
+    countdown.count = 3;
+    countdown.timer.reset();
+    spawn_countdown(&mut commands);
 }
 
 fn draw_move_line(
