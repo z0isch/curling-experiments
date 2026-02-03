@@ -3,8 +3,8 @@ use std::{collections::HashMap, fmt::Display, slice::Iter};
 use bevy::prelude::*;
 
 use crate::tile::{
-    TileAssets, TileType, on_pointer_out, on_pointer_over, on_tile_drag_enter, on_tile_dragging,
-    tile,
+    ScratchOffMaterial, TileAssets, TileType, on_pointer_out, on_pointer_over, on_tile_drag_enter,
+    on_tile_dragging, tile,
 };
 
 /// Component for the hex grid entity.
@@ -64,7 +64,12 @@ pub fn hex_to_world(hex_coord: &HexCoordinate, hex_grid: &HexGrid) -> Vec2 {
     Vec2::new(x, y)
 }
 
-pub fn spawn_hex_grid(commands: &mut Commands, grid: &HexGrid, tile_assets: &TileAssets) -> Entity {
+pub fn spawn_hex_grid(
+    commands: &mut Commands,
+    grid: &HexGrid,
+    tile_assets: &TileAssets,
+    scratch_materials: &mut Assets<ScratchOffMaterial>,
+) -> Entity {
     let mut tile_entities = Vec::new();
 
     for q in 0..grid.cols {
@@ -72,7 +77,14 @@ pub fn spawn_hex_grid(commands: &mut Commands, grid: &HexGrid, tile_assets: &Til
             let world_pos = hex_to_world(&HexCoordinate { q, r }, grid);
             if let Some(tile_type) = grid.level.grid.get(&HexCoordinate { q, r }) {
                 let tile_id = commands
-                    .spawn(tile(tile_type.clone(), world_pos, q, r, tile_assets))
+                    .spawn(tile(
+                        tile_type.clone(),
+                        world_pos,
+                        q,
+                        r,
+                        tile_assets,
+                        scratch_materials,
+                    ))
                     .observe(on_pointer_over)
                     .observe(on_pointer_out)
                     .observe(on_tile_dragging)

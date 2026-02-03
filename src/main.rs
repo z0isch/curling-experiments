@@ -6,6 +6,7 @@ mod stone;
 mod tile;
 
 use bevy::prelude::*;
+use bevy::sprite_render::Material2dPlugin;
 use bevy::window::WindowResolution;
 use bevy_egui::{EguiPlugin, EguiPrimaryContextPass};
 use bevy_rand::{
@@ -18,7 +19,10 @@ use hex_grid::{HexGrid, spawn_hex_grid};
 use stone::{
     Stone, Velocity, apply_tile_velocity_effects, resolve_collision, stone, update_stone_position,
 };
-use tile::{TileAssets, TileType, change_tile_type, compute_tile_effects, toggle_tile_coordinates};
+use tile::{
+    ScratchOffMaterial, TileAssets, TileType, change_tile_type, compute_tile_effects,
+    toggle_tile_coordinates,
+};
 
 use crate::{
     hex_grid::{get_initial_stone_velocity, get_level},
@@ -57,6 +61,7 @@ fn main() {
         }))
         .add_plugins(EguiPlugin::default())
         .add_plugins(MeshPickingPlugin)
+        .add_plugins(Material2dPlugin::<ScratchOffMaterial>::default())
         .add_plugins((
             EntropyPlugin::<ChaCha8Rng>::default(),
             EntropyPlugin::<WyRand>::default(),
@@ -97,13 +102,14 @@ fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
+    mut scratch_materials: ResMut<Assets<ScratchOffMaterial>>,
 ) {
     commands.insert_resource(PhysicsPaused(true));
     let level = get_level();
     let debug_ui_state = DebugUIState {
         hex_radius: 60.0,
         stone_radius: 10.0,
-        min_sweep_distance: 75.0,
+        min_sweep_distance: 200.0,
         drag_coefficient: 0.01,
         slow_down_factor: 5.0,
         rotation_factor: 0.017,
@@ -124,7 +130,7 @@ fn setup(
     let grid = HexGrid::new(debug_ui_state.hex_radius, &level);
     let tile_assets = TileAssets::new(&mut meshes, &mut materials, &grid);
 
-    spawn_hex_grid(&mut commands, &grid, &tile_assets);
+    spawn_hex_grid(&mut commands, &grid, &tile_assets, &mut scratch_materials);
     for stone_config in level.stone_configs {
         commands.spawn(stone(
             &mut meshes,
@@ -225,6 +231,7 @@ fn restart_game(
     mut countdown: ResMut<Countdown>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
+    mut scratch_materials: ResMut<Assets<ScratchOffMaterial>>,
 ) {
     if input.just_pressed(KeyCode::KeyR) {
         paused.0 = true;
@@ -234,7 +241,7 @@ fn restart_game(
 
         let grid = HexGrid::new(debug_ui_state.hex_radius, &level);
         let tile_assets = TileAssets::new(&mut meshes, &mut materials, &grid);
-        spawn_hex_grid(&mut commands, &grid, &tile_assets);
+        spawn_hex_grid(&mut commands, &grid, &tile_assets, &mut scratch_materials);
         for stone_entity in stone_query {
             commands.entity(stone_entity).despawn();
         }

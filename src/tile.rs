@@ -1,7 +1,31 @@
 use bevy::prelude::*;
+use bevy::render::render_resource::AsBindGroup;
+use bevy::shader::ShaderRef;
+use bevy::sprite_render::Material2d;
 
 use crate::hex_grid::HexGrid;
 use crate::{DebugUIState, intersection};
+
+// ============================================================================
+// Custom Scratch-Off Material
+// ============================================================================
+
+/// Custom material that creates a scratch-off reveal effect
+#[derive(Asset, TypePath, AsBindGroup, Clone)]
+pub struct ScratchOffMaterial {
+    #[uniform(0)]
+    pub top_color: LinearRgba,
+    #[uniform(0)]
+    pub reveal_color: LinearRgba,
+    #[uniform(0)]
+    pub progress: f32,
+}
+
+impl Material2d for ScratchOffMaterial {
+    fn fragment_shader() -> ShaderRef {
+        "shaders/scratch_off.wgsl".into()
+    }
+}
 
 // ============================================================================
 // Bundle Function
@@ -15,8 +39,17 @@ pub fn tile(
     q: i32,
     r: i32,
     tile_assets: &TileAssets,
+    scratch_materials: &mut Assets<ScratchOffMaterial>,
 ) -> impl Bundle {
-    let assets = tile_assets.get_assets(&tile_type);
+    // Create a unique scratch-off material for this tile
+    let top_color = get_tile_color(&tile_type).to_linear();
+    let reveal_color = COLORS[0].to_linear(); // MaintainSpeed color
+
+    let scratch_material = scratch_materials.add(ScratchOffMaterial {
+        top_color,
+        reveal_color,
+        progress: 0.0,
+    });
 
     (
         tile_type,
@@ -31,7 +64,7 @@ pub fn tile(
             (
                 TileFill,
                 Mesh2d(tile_assets.hex_mesh.clone()),
-                MeshMaterial2d(assets.material.clone()),
+                MeshMaterial2d(scratch_material),
                 Transform::from_xyz(0., 0., 1.0),
             ),
             (
@@ -68,17 +101,17 @@ pub fn tile(
 
 pub const COLORS: [Color; 6] = [
     // Cold ice white (almost glowing)
-    Color::srgb(240.0 / 255.0, 250.0 / 255.0, 255.0 / 255.0), // #F0FAFF
+    Color::srgb(240.0 / 255.0, 250.0 / 255.0, 1.), // #F0FAFF
     // Electric cyan (main ice color)
-    Color::srgb(40.0 / 255.0, 225.0 / 255.0, 255.0 / 255.0), // #28E1FF
+    Color::srgb(40.0 / 255.0, 225.0 / 255.0, 1.), // #28E1FF
     // Acid mint (energy / highlights)
-    Color::srgb(90.0 / 255.0, 255.0 / 255.0, 200.0 / 255.0), // #5AFFC8
+    Color::srgb(90.0 / 255.0, 1., 200.0 / 255.0), // #5AFFC8
     // Deep glacier blue (structure / background)
     Color::srgb(15.0 / 255.0, 70.0 / 255.0, 120.0 / 255.0), // #0F4678
     // Near-black ice (shadows / UI backing)
     Color::srgb(8.0 / 255.0, 16.0 / 255.0, 30.0 / 255.0), // #08101E
     // Hot strike accent (damage / danger)
-    Color::srgb(255.0 / 255.0, 60.0 / 255.0, 90.0 / 255.0), // #FF3C5A
+    Color::srgb(1., 60.0 / 255.0, 90.0 / 255.0), // #FF3C5A
 ];
 
 // ============================================================================
@@ -120,17 +153,6 @@ pub struct TileAssets {
     pub hex_border_mesh: Handle<Mesh>,
     pub border_material: Handle<ColorMaterial>,
     pub line_material: Handle<ColorMaterial>,
-    pub wall: TileTypeAssets,
-    pub maintain_speed: TileTypeAssets,
-    pub slow_down: TileTypeAssets,
-    pub turn_counterclockwise: TileTypeAssets,
-    pub turn_clockwise: TileTypeAssets,
-    pub goal: TileTypeAssets,
-}
-
-pub struct TileTypeAssets {
-    pub material: Handle<ColorMaterial>,
-    pub hover_material: Handle<ColorMaterial>,
 }
 
 impl TileAssets {
@@ -148,41 +170,6 @@ impl TileAssets {
             hex_border_mesh: meshes.add(RegularPolygon::new(hex_grid.hex_radius, 6)),
             border_material: materials.add(Color::BLACK),
             line_material: materials.add(COLORS[5]),
-            wall: TileTypeAssets {
-                material: materials.add(COLORS[3]),
-                hover_material: materials.add(COLORS[3].with_alpha(0.8)),
-            },
-            maintain_speed: TileTypeAssets {
-                material: materials.add(COLORS[0]),
-                hover_material: materials.add(COLORS[0].with_alpha(0.8)),
-            },
-            slow_down: TileTypeAssets {
-                material: materials.add(COLORS[1]),
-                hover_material: materials.add(COLORS[1].with_alpha(0.8)),
-            },
-            turn_counterclockwise: TileTypeAssets {
-                material: materials.add(COLORS[2]),
-                hover_material: materials.add(COLORS[2].with_alpha(0.8)),
-            },
-            turn_clockwise: TileTypeAssets {
-                material: materials.add(COLORS[4]),
-                hover_material: materials.add(COLORS[4].with_alpha(0.8)),
-            },
-            goal: TileTypeAssets {
-                material: materials.add(COLORS[5]),
-                hover_material: materials.add(COLORS[5].with_alpha(0.8)),
-            },
-        }
-    }
-
-    pub fn get_assets(&self, tile_type: &TileType) -> &TileTypeAssets {
-        match tile_type {
-            TileType::Wall => &self.wall,
-            TileType::MaintainSpeed => &self.maintain_speed,
-            TileType::SlowDown => &self.slow_down,
-            TileType::TurnCounterclockwise => &self.turn_counterclockwise,
-            TileType::TurnClockwise => &self.turn_clockwise,
-            TileType::Goal => &self.goal,
         }
     }
 }
@@ -231,28 +218,51 @@ pub fn toggle_tile_coordinates(
     }
 }
 
+/// Returns the base color for a given tile type
+fn get_tile_color(tile_type: &TileType) -> Color {
+    match tile_type {
+        TileType::Wall => COLORS[3],
+        TileType::MaintainSpeed => COLORS[0],
+        TileType::SlowDown => COLORS[1],
+        TileType::TurnCounterclockwise => COLORS[2],
+        TileType::TurnClockwise => COLORS[4],
+        TileType::Goal => COLORS[5],
+    }
+}
+
 pub fn update_tile_material(
-    tile_query: Query<(Entity, &TileType, Option<&MouseHover>)>,
+    tile_query: Query<(Entity, &TileType, Option<&TileDragging>)>,
     children_query: Query<&Children>,
-    tile_assets: Res<TileAssets>,
-    mut fill_query: Query<&mut MeshMaterial2d<ColorMaterial>, With<TileFill>>,
+    _tile_assets: Res<TileAssets>,
+    debug_ui_state: Res<DebugUIState>,
+    mut scratch_materials: ResMut<Assets<ScratchOffMaterial>>,
+    fill_query: Query<&MeshMaterial2d<ScratchOffMaterial>, With<TileFill>>,
 ) {
-    for (entity, tile_type, mouse_hover) in tile_query {
+    for (entity, tile_type, tile_dragging) in tile_query {
         if *tile_type == TileType::Wall || *tile_type == TileType::Goal {
             continue;
         }
         let Ok(children) = children_query.get(entity) else {
             continue;
         };
-        let assets = tile_assets.get_assets(tile_type);
-        let material = if mouse_hover.is_some() {
-            &assets.hover_material
+
+        // Calculate linear progress for scratch-off effect
+        let linear_progress = if let Some(dragging) = tile_dragging {
+            if debug_ui_state.min_sweep_distance > 0.0 {
+                (dragging.distance_dragged / debug_ui_state.min_sweep_distance).clamp(0.0, 1.0)
+            } else {
+                0.0
+            }
         } else {
-            &assets.material
+            0.0
         };
+
         for child in children.iter() {
-            if let Ok(mut mesh_material) = fill_query.get_mut(child) {
-                mesh_material.0 = material.clone();
+            // Update scratch-off material properties
+            if let Ok(mesh_material) = fill_query.get(child)
+                && let Some(material) = scratch_materials.get_mut(&mesh_material.0)
+            {
+                material.progress = linear_progress;
             }
         }
     }
