@@ -109,7 +109,7 @@ pub const COLORS: [Color; 6] = [
     // Deep glacier blue (structure / background)
     Color::srgb(15.0 / 255.0, 70.0 / 255.0, 120.0 / 255.0), // #0F4678
     // Near-black ice (shadows / UI backing)
-    Color::srgb(8.0 / 255.0, 16.0 / 255.0, 30.0 / 255.0), // #08101E
+    Color::srgb(251.0 / 255.0, 130.0 / 255.0, 241.0 / 255.0), //rgb(251, 130, 241)
     // Hot strike accent (damage / danger)
     Color::srgb(1., 60.0 / 255.0, 90.0 / 255.0), // #FF3C5A
 ];

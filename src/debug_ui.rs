@@ -62,7 +62,7 @@ pub fn debug_ui(mut contexts: EguiContexts, mut debug_ui_state: ResMut<DebugUISt
                     .text("Min Sweep Distance"),
             );
             debug_ui.add(
-                egui::Slider::new(&mut debug_ui_state.drag_coefficient, 0.005..=0.05)
+                egui::Slider::new(&mut debug_ui_state.drag_coefficient, 0.001..=0.01)
                     .text("Drag Coefficient"),
             );
             debug_ui.add(

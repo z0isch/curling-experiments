@@ -119,7 +119,7 @@ fn setup(
         hex_radius: 60.0,
         stone_radius: 15.0,
         min_sweep_distance: 250.0,
-        drag_coefficient: 0.005,
+        drag_coefficient: 0.0036,
         slow_down_factor: 5.0,
         rotation_factor: 0.025,
         snap_distance: 40.0,
