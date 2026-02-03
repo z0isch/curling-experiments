@@ -410,12 +410,16 @@ pub fn compute_tile_effects(
         // Calculate weights for blending between current type and drag target type
         let (current_weight, drag_weight, drag_tile_type) = match *maybe_dragging {
             Some(dragging) => {
-                let progress = if min_sweep_distance > 0.0 {
-                    (dragging.distance_dragged / min_sweep_distance).clamp(0.0, 1.0)
+                if dragging.tile_type == **tile_type {
+                    (1.0, 0.0, None)
                 } else {
-                    0.0
-                };
-                (1.0 - progress, progress, Some(&dragging.tile_type))
+                    let progress = if min_sweep_distance > 0.0 {
+                        (dragging.distance_dragged / min_sweep_distance).clamp(0.0, 1.0)
+                    } else {
+                        0.0
+                    };
+                    (1.0 - progress, progress, Some(&dragging.tile_type))
+                }
             }
             None => (1.0, 0.0, None),
         };

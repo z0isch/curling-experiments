@@ -109,7 +109,7 @@ fn setup(
     let debug_ui_state = DebugUIState {
         hex_radius: 60.0,
         stone_radius: 10.0,
-        min_sweep_distance: 200.0,
+        min_sweep_distance: 350.0,
         drag_coefficient: 0.01,
         slow_down_factor: 5.0,
         rotation_factor: 0.017,
