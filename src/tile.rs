@@ -100,18 +100,12 @@ pub fn tile(
 // ============================================================================
 
 pub const COLORS: [Color; 6] = [
-    // Cold ice white (almost glowing)
-    Color::srgb(240.0 / 255.0, 250.0 / 255.0, 1.), // #F0FAFF
-    // Electric cyan (main ice color)
-    Color::srgb(40.0 / 255.0, 225.0 / 255.0, 1.), // #28E1FF
-    // Acid mint (energy / highlights)
-    Color::srgb(90.0 / 255.0, 1., 200.0 / 255.0), // #5AFFC8
-    // Deep glacier blue (structure / background)
-    Color::srgb(15.0 / 255.0, 70.0 / 255.0, 120.0 / 255.0), //rgb(150, 0, 0)
-    // Near-black ice (shadows / UI backing)
-    Color::srgb(251.0 / 255.0, 130.0 / 255.0, 241.0 / 255.0), //rgb(0, 0, 0)
-    // Hot strike accent (damage / danger)
-    Color::srgb(1., 60.0 / 255.0, 90.0 / 255.0), // #FF3C5A
+    Color::srgb(238.0 / 255.0, 249.0 / 255.0, 1.), // rgb(238, 249, 255)
+    Color::srgb(35.0 / 255.0, 221. / 255., 1.),    // rgb(35, 221, 255)
+    Color::srgb(78.0 / 255.0, 238.0 / 255.0, 179.0 / 255.0), //rgb(78, 238, 179)
+    Color::srgb(12.0 / 255.0, 60.0 / 255.0, 251.0 / 255.0), //rgb(12, 60, 251)
+    Color::srgb(221.0 / 255.0, 104.0 / 255.0, 210.0 / 255.0), //rgb(221, 104, 210)
+    Color::srgb(1., 60.0 / 255.0, 90.0 / 255.0),   // rgb(255,53,79)
 ];
 
 // ============================================================================
