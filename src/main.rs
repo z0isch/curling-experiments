@@ -432,7 +432,7 @@ fn drag_with_keyboard(
             None => {
                 // Insert new TileDragging component
                 commands.entity(entity).insert(TileDragging {
-                    last_position: Vec2::ZERO,
+                    last_position: None,
                     distance_dragged: 0.0,
                     tile_type: current_drag_tile_type.0.clone(),
                     last_keyboard_input: Some(*just_pressed),

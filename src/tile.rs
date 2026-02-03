@@ -136,7 +136,7 @@ pub struct TileCoordinateText;
 
 #[derive(Component, Debug)]
 pub struct TileDragging {
-    pub last_position: Vec2,
+    pub last_position: Option<Vec2>,
     pub distance_dragged: f32,
     pub tile_type: TileType,
     pub last_keyboard_input: Option<KeyCode>,
@@ -301,10 +301,10 @@ pub fn on_tile_drag_enter(
     current_drag_tile_type: Res<CurrentDragTileType>,
 ) {
     if let Ok(Some(mut tile_dragging)) = tile_dragging_q.get_mut(drag_enter.entity) {
-        tile_dragging.last_position = drag_enter.pointer_location.position;
+        tile_dragging.last_position = Some(drag_enter.pointer_location.position);
     } else {
         commands.entity(drag_enter.entity).insert(TileDragging {
-            last_position: drag_enter.pointer_location.position,
+            last_position: Some(drag_enter.pointer_location.position),
             distance_dragged: 0.0,
             tile_type: current_drag_tile_type.0.clone(),
             last_keyboard_input: None,
@@ -319,8 +319,10 @@ pub fn on_tile_dragging(
     if *tile.1 == TileType::Goal || *tile.1 == TileType::Wall {
         return;
     }
-    tile.0.distance_dragged += (drag.pointer_location.position - tile.0.last_position).length();
-    tile.0.last_position = drag.pointer_location.position;
+    if let Some(last_position) = tile.0.last_position {
+        tile.0.distance_dragged += (drag.pointer_location.position - last_position).length();
+        tile.0.last_position = Some(drag.pointer_location.position);
+    }
 }
 
 // ============================================================================
