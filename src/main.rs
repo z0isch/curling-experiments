@@ -1,4 +1,5 @@
 mod debug_ui;
+mod fire_trail;
 mod hex_grid;
 mod intersection;
 mod stone;
@@ -12,6 +13,7 @@ use bevy_rand::{
     prelude::{ChaCha8Rng, WyRand},
 };
 use debug_ui::{DebugUIState, StoneUIConfig, debug_ui};
+use fire_trail::{spawn_fire_trail, update_fire_trail};
 use hex_grid::{HexGrid, spawn_hex_grid};
 use stone::{
     Stone, Velocity, apply_tile_velocity_effects, resolve_collision, stone, update_stone_position,
@@ -70,6 +72,10 @@ fn main() {
             )
                 .chain()
                 .run_if(|paused: Res<PhysicsPaused>| !paused.0),
+        )
+        .add_systems(
+            Update,
+            (spawn_fire_trail, update_fire_trail).run_if(|paused: Res<PhysicsPaused>| !paused.0),
         )
         .add_systems(
             Update,
