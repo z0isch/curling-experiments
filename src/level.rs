@@ -132,10 +132,10 @@ fn get_level1() -> Level {
         goal_coordinate,
         stone_configs: vec![StoneConfig {
             start_coordinate,
-            velocity_magnitude: 500.0,
+            velocity_magnitude: 200.0,
             facing: Facing::DownRight,
         }],
-        countdown: 5,
+        countdown: 3,
     }
 }
 
@@ -180,9 +180,9 @@ fn get_level2() -> Level {
         goal_coordinate,
         stone_configs: vec![StoneConfig {
             start_coordinate,
-            velocity_magnitude: 500.0,
+            velocity_magnitude: 200.0,
             facing: Facing::DownRight,
         }],
-        countdown: 5,
+        countdown: 3,
     }
 }
