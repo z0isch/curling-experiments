@@ -263,11 +263,15 @@ pub fn update_tile_material(
             0.0
         };
 
+        // Apply ease-out curve: ramp up quickly at the start, slow down toward the end
+        // sqrt makes the first few percent much more impactful (e.g., 1% -> 10%, 4% -> 20%)
+        let eased_progress = linear_progress.sqrt();
+
         // It's hard to see when the tile is almost complete, so we scale it down to 50%
         let display_progress = if linear_progress >= 1.0 {
             1.0
         } else {
-            linear_progress * 0.50
+            eased_progress * 0.50
         };
 
         // Get the reveal color from either the tile's dragging state or the current drag tile type
