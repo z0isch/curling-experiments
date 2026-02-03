@@ -6,8 +6,8 @@ use crate::{hex_grid::HexCoordinate, tile::TileType};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum CurrentLevel {
-    #[default]
     Level1,
+    #[default]
     Level2,
 }
 
@@ -62,6 +62,7 @@ pub struct Level {
     pub grid: HashMap<HexCoordinate, TileType>,
     pub goal_coordinate: HexCoordinate,
     pub stone_configs: Vec<StoneConfig>,
+    pub countdown: u32,
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -134,12 +135,13 @@ fn get_level1() -> Level {
             velocity_magnitude: 500.0,
             facing: Facing::DownRight,
         }],
+        countdown: 5,
     }
 }
 
 fn get_level2() -> Level {
-    let goal_coordinate = HexCoordinate { q: 7, r: 4 };
-    let start_coordinate = HexCoordinate { q: 2, r: 1 };
+    let goal_coordinate = HexCoordinate { q: 7, r: 0 };
+    let start_coordinate = HexCoordinate { q: 1, r: 1 };
 
     let grid = HashMap::from([
         (HexCoordinate { q: 0, r: 0 }, TileType::Wall),
@@ -147,28 +149,29 @@ fn get_level2() -> Level {
         (HexCoordinate { q: 1, r: 2 }, TileType::Wall),
         (HexCoordinate { q: 2, r: 2 }, TileType::Wall),
         (HexCoordinate { q: 3, r: 3 }, TileType::Wall),
-        (HexCoordinate { q: 4, r: 3 }, TileType::Wall),
-        (HexCoordinate { q: 5, r: 3 }, TileType::Wall),
+        (HexCoordinate { q: 4, r: 2 }, TileType::Wall),
         (HexCoordinate { q: 5, r: 2 }, TileType::Wall),
-        (HexCoordinate { q: 4, r: 1 }, TileType::Wall),
+        (HexCoordinate { q: 5, r: 2 }, TileType::Wall),
+        (HexCoordinate { q: 6, r: 1 }, TileType::Wall),
+        (HexCoordinate { q: 7, r: 1 }, TileType::Wall),
+        (HexCoordinate { q: 8, r: 0 }, TileType::Wall),
+        (HexCoordinate { q: 8, r: -1 }, TileType::Wall),
+        (HexCoordinate { q: 7, r: -1 }, TileType::Wall),
+        (HexCoordinate { q: 6, r: -1 }, TileType::Wall),
+        (HexCoordinate { q: 5, r: 0 }, TileType::Wall),
+        (HexCoordinate { q: 4, r: 0 }, TileType::Wall),
         (HexCoordinate { q: 3, r: 1 }, TileType::Wall),
         (HexCoordinate { q: 2, r: 0 }, TileType::Wall),
         (HexCoordinate { q: 1, r: 0 }, TileType::Wall),
-        (HexCoordinate { q: 5, r: 2 }, TileType::Wall),
-        (HexCoordinate { q: 6, r: 2 }, TileType::Wall),
-        (HexCoordinate { q: 7, r: 3 }, TileType::Wall),
-        (HexCoordinate { q: 5, r: 4 }, TileType::Wall),
-        (HexCoordinate { q: 6, r: 4 }, TileType::Wall),
-        (HexCoordinate { q: 7, r: 5 }, TileType::Wall),
-        (HexCoordinate { q: 8, r: 3 }, TileType::Wall),
-        (HexCoordinate { q: 8, r: 4 }, TileType::Wall),
         //
-        (HexCoordinate { q: 1, r: 1 }, TileType::SlowDown),
+        (HexCoordinate { q: 8, r: 0 }, TileType::Wall),
+        //
         (start_coordinate.clone(), TileType::MaintainSpeed),
+        (HexCoordinate { q: 2, r: 1 }, TileType::SlowDown),
         (HexCoordinate { q: 3, r: 2 }, TileType::SlowDown),
-        (HexCoordinate { q: 4, r: 2 }, TileType::SlowDown),
-        (HexCoordinate { q: 5, r: 3 }, TileType::SlowDown),
-        (HexCoordinate { q: 6, r: 3 }, TileType::SlowDown),
+        (HexCoordinate { q: 4, r: 1 }, TileType::SlowDown),
+        (HexCoordinate { q: 5, r: 1 }, TileType::SlowDown),
+        (HexCoordinate { q: 6, r: 0 }, TileType::SlowDown),
         (goal_coordinate.clone(), TileType::Goal),
     ]);
 
@@ -177,8 +180,9 @@ fn get_level2() -> Level {
         goal_coordinate,
         stone_configs: vec![StoneConfig {
             start_coordinate,
-            velocity_magnitude: 100.0,
+            velocity_magnitude: 500.0,
             facing: Facing::DownRight,
         }],
+        countdown: 5,
     }
 }

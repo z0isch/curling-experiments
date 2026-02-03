@@ -94,6 +94,7 @@ fn main() {
                 toggle_tile_coordinates,
                 update_tile_material,
                 update_countdown,
+                switch_broom,
             )
                 .in_set(MainUpdateSystems),
         )
@@ -114,15 +115,15 @@ fn setup(
     mut scratch_materials: ResMut<Assets<ScratchOffMaterial>>,
 ) {
     commands.insert_resource(PhysicsPaused(true));
-    let current_level = CurrentLevel::Level1;
+    let current_level = CurrentLevel::default();
     let level = get_level(current_level);
     let debug_ui_state = DebugUIState {
         hex_radius: 60.0,
-        stone_radius: 10.0,
-        min_sweep_distance: 350.0,
+        stone_radius: 15.0,
+        min_sweep_distance: 250.0,
         drag_coefficient: 0.01,
         slow_down_factor: 5.0,
-        rotation_factor: 0.017,
+        rotation_factor: 0.067,
         snap_distance: 40.0,
         snap_velocity: 40.0,
         current_level,
@@ -157,10 +158,10 @@ fn setup(
     commands.insert_resource(debug_ui_state);
     commands.insert_resource(CurrentDragTileType(TileType::MaintainSpeed));
 
-    spawn_countdown(&mut commands);
+    spawn_countdown(&mut commands, level.countdown);
     commands.insert_resource(Countdown {
         timer: Timer::from_seconds(1.0, TimerMode::Repeating),
-        count: 3,
+        count: level.countdown,
     });
 }
 
@@ -171,7 +172,7 @@ fn toggle_physics_pause(input: Res<ButtonInput<KeyCode>>, mut paused: ResMut<Phy
     }
 }
 
-fn spawn_countdown(commands: &mut Commands) {
+fn spawn_countdown(commands: &mut Commands, countdown: u32) {
     commands
         .spawn((
             Node {
@@ -187,7 +188,7 @@ fn spawn_countdown(commands: &mut Commands) {
         .with_children(|parent| {
             parent.spawn((
                 CountdownText,
-                Text::new("3"),
+                Text::new(countdown.to_string()),
                 TextFont {
                     font_size: 120.0,
                     ..default()
@@ -228,6 +229,21 @@ fn update_countdown(
                 **text = countdown.count.to_string();
             }
         }
+    }
+}
+
+pub fn switch_broom(
+    input: Res<ButtonInput<KeyCode>>,
+    mut current_drag_tile_type: ResMut<CurrentDragTileType>,
+) {
+    if input.just_pressed(KeyCode::Digit1) {
+        *current_drag_tile_type = CurrentDragTileType(TileType::MaintainSpeed);
+    }
+    if input.just_pressed(KeyCode::Digit2) {
+        *current_drag_tile_type = CurrentDragTileType(TileType::TurnCounterclockwise);
+    }
+    if input.just_pressed(KeyCode::Digit3) {
+        *current_drag_tile_type = CurrentDragTileType(TileType::TurnClockwise);
     }
 }
 
@@ -303,9 +319,9 @@ pub fn restart_game(
     for entity in countdown_ui_query {
         commands.entity(entity).despawn();
     }
-    countdown.count = 3;
+    countdown.count = level.countdown;
     countdown.timer.reset();
-    spawn_countdown(&mut commands);
+    spawn_countdown(&mut commands, level.countdown);
 }
 
 fn draw_move_line(
