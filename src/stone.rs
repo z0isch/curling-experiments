@@ -8,7 +8,6 @@ use crate::tile::{TileDragging, TileType, compute_tile_effects};
 pub struct Stone {
     pub radius: f32,
     pub trail_accum: f32,
-    pub ember_seed: u32,
 }
 
 #[derive(Component, Clone)]
@@ -31,7 +30,6 @@ pub fn stone(
         Stone {
             radius,
             trail_accum: 0.0,
-            ember_seed: 12345,
         },
         Velocity(velocity),
         Mesh2d(stone_mesh),

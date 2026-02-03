@@ -2,6 +2,8 @@ use bevy::prelude::*;
 
 use crate::stone::{Stone, Velocity};
 
+const EMBER_SEED: u32 = 12345;
+
 #[derive(Component)]
 pub struct TrailDot {
     pub ttl: f32,
@@ -9,9 +11,10 @@ pub struct TrailDot {
 }
 
 /// Simple pseudo-random number generator for trail effects
-fn rand01(seed: &mut u32) -> f32 {
-    *seed = seed.wrapping_mul(1103515245).wrapping_add(12345);
-    ((*seed >> 16) & 0x7fff) as f32 / 32767.0
+fn rand01() -> f32 {
+    let seed = EMBER_SEED;
+    let seed = seed.wrapping_mul(1103515245).wrapping_add(12345);
+    ((seed >> 16) & 0x7fff) as f32 / 32767.0
 }
 
 /// System that spawns fire trail particles behind moving stones.
@@ -56,8 +59,8 @@ pub fn spawn_fire_trail(
 
         // Tiny jitter so it licks around like flame
         let j = stone.radius * (0.40 + 0.50 * t);
-        let jx = (rand01(&mut stone.ember_seed) - 0.5) * j;
-        let jy = (rand01(&mut stone.ember_seed) - 0.5) * j;
+        let jx = (rand01() - 0.5) * j;
+        let jy = (rand01() - 0.5) * j;
 
         let base_x = transform.translation.x + behind.x + jx;
         let base_y = transform.translation.y + behind.y + jy;
@@ -86,7 +89,7 @@ pub fn spawn_fire_trail(
         ));
 
         // --- Hot core streak (yellow/white), often ---
-        if rand01(&mut stone.ember_seed) < (0.55 + 0.25 * t) {
+        if rand01() < (0.55 + 0.25 * t) {
             let core_r = stone.radius * (0.22 + 0.18 * t);
             let core_ttl = 0.12 + 0.10 * t;
             let core_alpha = 0.18 + 0.45 * t;
@@ -109,15 +112,15 @@ pub fn spawn_fire_trail(
         }
 
         // --- Occasional ember speck (small red dot) ---
-        if rand01(&mut stone.ember_seed) < (0.22 + 0.18 * t) {
+        if rand01() < (0.22 + 0.18 * t) {
             let ember_r = stone.radius * 0.10;
             let ember_ttl = 0.28 + 0.15 * t;
             let ember_alpha = 0.10 + 0.20 * t;
 
             let ember_color = Color::srgba(1.0, 0.10, 0.05, ember_alpha);
 
-            let sx = (rand01(&mut stone.ember_seed) - 0.5) * (stone.radius * 1.2);
-            let sy = (rand01(&mut stone.ember_seed) - 0.5) * (stone.radius * 1.2);
+            let sx = (rand01() - 0.5) * (stone.radius * 1.2);
+            let sy = (rand01() - 0.5) * (stone.radius * 1.2);
 
             commands.spawn((
                 TrailDot {
