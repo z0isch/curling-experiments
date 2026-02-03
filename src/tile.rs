@@ -107,9 +107,9 @@ pub const COLORS: [Color; 6] = [
     // Acid mint (energy / highlights)
     Color::srgb(90.0 / 255.0, 1., 200.0 / 255.0), // #5AFFC8
     // Deep glacier blue (structure / background)
-    Color::srgb(15.0 / 255.0, 70.0 / 255.0, 120.0 / 255.0), // #0F4678
+    Color::srgb(15.0 / 255.0, 70.0 / 255.0, 120.0 / 255.0), //rgb(150, 0, 0)
     // Near-black ice (shadows / UI backing)
-    Color::srgb(251.0 / 255.0, 130.0 / 255.0, 241.0 / 255.0), //rgb(251, 130, 241)
+    Color::srgb(251.0 / 255.0, 130.0 / 255.0, 241.0 / 255.0), //rgb(0, 0, 0)
     // Hot strike accent (damage / danger)
     Color::srgb(1., 60.0 / 255.0, 90.0 / 255.0), // #FF3C5A
 ];

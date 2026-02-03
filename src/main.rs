@@ -7,6 +7,7 @@ mod stone;
 mod tile;
 mod ui;
 
+use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
 use bevy::sprite_render::Material2dPlugin;
 use bevy::window::WindowResolution;
@@ -312,13 +313,74 @@ fn draw_move_line(
     );
 
     for trajectory in trajectories {
-        commands.spawn((
-            StoneMoveLine,
-            Mesh2d(meshes.add(Polyline2d::new(trajectory))),
-            MeshMaterial2d(tile_assets.line_material.clone()),
-            Transform::from_xyz(0., 0., 3.0),
-        ));
+        if let Some(mesh) = create_tapered_line_mesh(&trajectory, 6.0, 1.0) {
+            commands.spawn((
+                StoneMoveLine,
+                Mesh2d(meshes.add(mesh)),
+                MeshMaterial2d(tile_assets.line_material.clone()),
+                Transform::from_xyz(0., 0., 2.0),
+            ));
+        }
     }
+}
+
+/// Creates a tapered line mesh that starts thick and thins out along the trajectory.
+fn create_tapered_line_mesh(points: &[Vec2], start_width: f32, end_width: f32) -> Option<Mesh> {
+    if points.len() < 2 {
+        return None;
+    }
+
+    let mut positions: Vec<[f32; 3]> = Vec::with_capacity(points.len() * 2);
+    let mut indices: Vec<u32> = Vec::with_capacity((points.len() - 1) * 6);
+
+    let total_points = points.len();
+
+    for (i, point) in points.iter().enumerate() {
+        // Calculate the direction at this point
+        let direction = if i == 0 {
+            (points[1] - points[0]).normalize_or_zero()
+        } else if i == total_points - 1 {
+            (points[i] - points[i - 1]).normalize_or_zero()
+        } else {
+            // Average direction from neighbors for smoother curves
+            ((points[i] - points[i - 1]).normalize_or_zero()
+                + (points[i + 1] - points[i]).normalize_or_zero())
+            .normalize_or_zero()
+        };
+
+        // Perpendicular direction (rotate 90 degrees)
+        let perpendicular = Vec2::new(-direction.y, direction.x);
+
+        // Interpolate width from start to end (using sqrt for faster tapering)
+        let t = (i as f32 / (total_points - 1) as f32).sqrt();
+        let half_width = (start_width * (1.0 - t) + end_width * t) / 2.0;
+
+        // Create two vertices on either side of the line
+        let left = *point + perpendicular * half_width;
+        let right = *point - perpendicular * half_width;
+
+        positions.push([left.x, left.y, 0.0]);
+        positions.push([right.x, right.y, 0.0]);
+
+        // Create triangles connecting to previous segment
+        if i > 0 {
+            let base = (i as u32 - 1) * 2;
+            // Two triangles forming a quad
+            indices.push(base); // prev left
+            indices.push(base + 1); // prev right
+            indices.push(base + 2); // curr left
+
+            indices.push(base + 1); // prev right
+            indices.push(base + 3); // curr right
+            indices.push(base + 2); // curr left
+        }
+    }
+
+    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, default());
+    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
+    mesh.insert_indices(Indices::U32(indices));
+
+    Some(mesh)
 }
 
 /// Simulates all stones' trajectories by forward-integrating physics.
