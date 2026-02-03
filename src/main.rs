@@ -1,3 +1,4 @@
+mod crt_postprocess;
 mod debug_ui;
 mod fire_trail;
 mod hex_grid;
@@ -16,6 +17,7 @@ use bevy_rand::{
     plugin::EntropyPlugin,
     prelude::{ChaCha8Rng, WyRand},
 };
+use crt_postprocess::{CrtPostProcessPlugin, CrtSettings, update_crt_time};
 use debug_ui::{DebugUIState, StoneUIConfig, debug_ui};
 use fire_trail::{spawn_fire_trail, update_fire_trail};
 use hex_grid::{HexGrid, spawn_hex_grid};
@@ -66,6 +68,7 @@ fn main() {
             EntropyPlugin::<ChaCha8Rng>::default(),
             EntropyPlugin::<WyRand>::default(),
         ))
+        .add_plugins(CrtPostProcessPlugin)
         .add_systems(EguiPrimaryContextPass, debug_ui)
         .add_systems(Startup, setup)
         .add_systems(
@@ -101,6 +104,7 @@ fn main() {
             Update,
             (restart_game_on_r_key_pressed, on_debug_ui_level_change).after(MainUpdateSystems),
         )
+        .add_systems(Update, update_crt_time)
         .run();
 }
 
@@ -136,7 +140,7 @@ fn setup(
             .collect(),
     };
 
-    commands.spawn(Camera2d);
+    commands.spawn((Camera2d, CrtSettings::default()));
 
     let grid = HexGrid::new(debug_ui_state.hex_radius, &level);
     let tile_assets = TileAssets::new(&mut meshes, &mut materials, &grid);
