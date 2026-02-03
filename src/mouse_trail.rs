@@ -8,12 +8,24 @@ pub struct MouseTrailLine;
 #[derive(Default)]
 pub(crate) struct MouseTrailLocal {
     last_pos: Option<Vec2>,
-    points: Vec<Vec2>,
-    line_entity: Option<Entity>,
-    released_timer: Option<f32>,
+    // points for the currently-drawing segment
+    active_points: Vec<Vec2>,
+    // multiple trail segments (previous ones persist and fade)
+    segments: Vec<TrailSegment>,
+    // index of the currently-active segment in `segments`
+    current_segment: Option<usize>,
 }
 
-const TRAIL_TTL: f32 = 1.5;
+#[derive(Clone)]
+struct TrailSegment {
+    parent: Entity,
+    child_entities: Vec<Entity>,
+    // remaining time (seconds) until fully faded and removed
+    released_timer: Option<f32>,
+    mat_handle: Handle<ColorMaterial>,
+}
+
+const TRAIL_TTL: f32 = 0.5;
 
 /// Builds/updates a single polyline while the left mouse button is held.
 /// The line persists after release and fades out over `TRAIL_TTL` seconds.
@@ -39,10 +51,7 @@ pub fn spawn_mouse_trail(
     };
     let cursor_pos = match window.cursor_position() {
         Some(p) => p,
-        None => {
-            // cursor outside window
-            return;
-        }
+        None => return,
     };
     let (camera, camera_transform) = match camera_q.single() {
         Ok(c) => c,
@@ -53,84 +62,126 @@ pub fn spawn_mouse_trail(
         Err(_) => return,
     };
 
-    // If left mouse pressed, sample points and reset release timer
+    // If left mouse pressed, sample points and either start a new segment or update the active one
     if mouse_buttons.pressed(MouseButton::Left) {
-        local.released_timer = None;
-
-        if local.last_pos.is_none() {
+        // If there is no active segment, start one
+        if local.current_segment.is_none() {
+            local.active_points.clear();
+            local.active_points.push(world_pos);
             local.last_pos = Some(world_pos);
-            local.points.push(world_pos);
-        } else {
-            let mut last = local.last_pos.unwrap();
-            let mut remaining = (world_pos - last).length();
-            if remaining < 0.01 {
-                // negligible movement
-                local.last_pos = Some(world_pos);
-            } else {
-                let dir = (world_pos - last).normalize_or_zero();
-                while remaining > spawn_spacing {
-                    last += dir * spawn_spacing;
-                    remaining = (world_pos - last).length();
-                    local.points.push(last);
-                }
-                local.points.push(world_pos);
-                local.last_pos = Some(world_pos);
-            }
-        }
 
-        // Build a smoothed point list using Catmull-Rom
-        let smoothed = if local.points.len() >= 2 {
-            catmull_rom_spline(&local.points, smoothing_subdivs)
-        } else {
-            local.points.clone()
-        };
-
-        // Build a smoothed point list and spawn/update a Polyline2d mesh
-        if smoothed.len() >= 2 {
-            // create base polyline mesh (thin)
-            let mesh_handle = meshes.add(Polyline2d::new(smoothed.clone()));
+            // Create a material for this segment
             let mat_handle = materials.add(gold);
 
-            // spawn parent entity with polyline
-            if local.line_entity.is_none() {
-                let ent = commands
-                    .spawn((
-                        MouseTrailLine,
-                        Mesh2d(mesh_handle),
-                        MeshMaterial2d(mat_handle.clone()),
-                        Transform::from_xyz(0.0, 0.0, 6.0),
-                    ))
-                    .id();
-                // spawn circle children along the smoothed points to thicken the appearance
-                let radius = thickness * 0.5;
-                let mut child_ids: Vec<Entity> = Vec::new();
-                for p in &smoothed {
-                    let child = commands
-                        .spawn((
-                            Mesh2d(meshes.add(Circle::new(radius))),
-                            MeshMaterial2d(mat_handle.clone()),
-                            Transform::from_xyz(p.x, p.y, 5.9),
-                        ))
-                        .id();
-                    child_ids.push(child);
+            // Create a parent entity (polyline will be inserted as we get more points)
+            let parent = commands
+                .spawn((
+                    MouseTrailLine,
+                    // start without a mesh; we'll insert Mesh2d once we have >=2 points
+                    MeshMaterial2d(mat_handle.clone()),
+                    Transform::from_xyz(0.0, 0.0, 6.0),
+                ))
+                .id();
+
+            // create an initial child circle at the first point
+            let radius = thickness * 0.5;
+            let child = commands
+                .spawn((
+                    Mesh2d(meshes.add(Circle::new(radius))),
+                    MeshMaterial2d(mat_handle.clone()),
+                    Transform::from_xyz(world_pos.x, world_pos.y, 5.9),
+                ))
+                .id();
+            commands.entity(parent).add_children(&[child]);
+
+            local.segments.push(TrailSegment {
+                parent,
+                child_entities: vec![child],
+                released_timer: None,
+                mat_handle: mat_handle.clone(),
+            });
+            local.current_segment = Some(local.segments.len() - 1);
+        } else {
+            // continue the current segment
+            let idx = local.current_segment.unwrap();
+            // sampling like before
+            if local.last_pos.is_none() {
+                local.last_pos = Some(world_pos);
+                local.active_points.push(world_pos);
+            } else {
+                let mut last = local.last_pos.unwrap();
+                let mut remaining = (world_pos - last).length();
+                if remaining < 0.01 {
+                    local.last_pos = Some(world_pos);
+                } else {
+                    let dir = (world_pos - last).normalize_or_zero();
+                    while remaining > spawn_spacing {
+                        last += dir * spawn_spacing;
+                        remaining = (world_pos - last).length();
+                        local.active_points.push(last);
+                    }
+                    local.active_points.push(world_pos);
+                    local.last_pos = Some(world_pos);
                 }
-                commands.entity(ent).add_children(&child_ids);
-                local.line_entity = Some(ent);
-            } else if let Some(ent) = local.line_entity {
-                // update polyline mesh
-                commands.entity(ent).insert(Mesh2d(mesh_handle));
+            }
+
+            // Build smoothed points
+            let smoothed = if local.active_points.len() >= 2 {
+                catmull_rom_spline(&local.active_points, smoothing_subdivs)
+            } else {
+                local.active_points.clone()
+            };
+
+            // Update mesh if we have >=2 points
+            let parent = local.segments[idx].parent;
+            let seg_mat = local.segments[idx].mat_handle.clone();
+
+            if smoothed.len() >= 2 {
+                let mesh_handle = meshes.add(Polyline2d::new(smoothed.clone()));
+                commands.entity(parent).insert(Mesh2d(mesh_handle));
+
+                // ensure child entities exist and update their transforms
+                let radius = thickness * 0.5;
+                // spawn extra children if needed
+                if local.segments[idx].child_entities.len() < smoothed.len() {
+                    let mut new_children = Vec::new();
+                    for p in &smoothed[local.segments[idx].child_entities.len()..] {
+                        let child = commands
+                            .spawn((
+                                Mesh2d(meshes.add(Circle::new(radius))),
+                                MeshMaterial2d(seg_mat.clone()),
+                                Transform::from_xyz(p.x, p.y, 5.9),
+                            ))
+                            .id();
+                        new_children.push(child);
+                        local.segments[idx].child_entities.push(child);
+                    }
+                    if !new_children.is_empty() {
+                        commands.entity(parent).add_children(&new_children);
+                    }
+                }
+
+                for (i, child) in local.segments[idx].child_entities.iter().enumerate() {
+                    if let Some(p) = smoothed.get(i) {
+                        commands
+                            .entity(*child)
+                            .insert(Transform::from_xyz(p.x, p.y, 5.9));
+                    }
+                }
             }
         }
     } else {
-        // Mouse not pressed: start or continue release timer
-        if local.line_entity.is_some() && local.released_timer.is_none() {
-            local.released_timer = Some(0.0);
+        // Mouse not pressed: if there is an active segment, mark it released
+        if let Some(idx) = local.current_segment {
+            local.segments[idx].released_timer = Some(TRAIL_TTL);
+            println!("[mouse_trail] released segment {} ttl={}", idx, TRAIL_TTL);
+            local.current_segment = None;
         }
         local.last_pos = None;
     }
 }
 
-/// Updates fade and despawn for the single trail line created above.
+/// Updates fade and despawn for all trail segments.
 pub fn update_mouse_trail(
     mut commands: Commands,
     mut materials: ResMut<Assets<ColorMaterial>>,
@@ -140,41 +191,54 @@ pub fn update_mouse_trail(
 ) {
     let dt = time.delta_secs();
 
-    if let Some(ent) = local.line_entity {
-        // If entity has been despawned elsewhere, clear local
-        if query.get(ent).is_err() {
-            local.line_entity = None;
-            local.points.clear();
-            local.released_timer = None;
-            return;
+    // Collect indices to remove after iteration
+    let mut to_remove: Vec<usize> = Vec::new();
+    for (i, seg) in local.segments.iter_mut().enumerate() {
+        // If parent entity gone, mark removed
+        if query.get(seg.parent).is_err() {
+            to_remove.push(i);
+            continue;
         }
 
-        // Update release timer and material alpha
-        if let Some(t) = &mut local.released_timer {
-            *t += dt;
-            let alpha = (1.0 - (*t / TRAIL_TTL)).clamp(0.0, 1.0);
+        if let Some(timer) = seg.released_timer {
+            // `timer` is remaining time; alpha goes from 1.0 -> 0.0
+            let alpha = (timer / TRAIL_TTL).clamp(0.0, 1.0);
 
-            if let Ok((_, mat_handle)) = query.get(ent) {
-                if let Some(mat) = materials.get_mut(&mat_handle.0) {
-                    mat.color.set_alpha(alpha);
-                }
+            if let Some(mat) = materials.get_mut(&seg.mat_handle) {
+                mat.color.set_alpha(alpha);
             }
 
-            if *t >= TRAIL_TTL {
-                // remove line
-                commands.entity(ent).despawn();
-                local.line_entity = None;
-                local.points.clear();
-                local.released_timer = None;
+            if timer <= 0.0 {
+                println!("[mouse_trail] despawning segment {}", i);
+                // despawn children then parent
+                for child in &seg.child_entities {
+                    commands.entity(*child).despawn();
+                }
+                commands.entity(seg.parent).despawn();
+                to_remove.push(i);
+            } else {
+                // subtract delta
+                seg.released_timer = Some(timer - dt);
             }
         } else {
             // ensure full alpha while drawing
-            if let Ok((_, mat_handle)) = query.get(ent) {
-                if let Some(mat) = materials.get_mut(&mat_handle.0) {
-                    mat.color.set_alpha(1.0);
-                }
+            if let Some(mat) = materials.get_mut(&seg.mat_handle) {
+                mat.color.set_alpha(1.0);
             }
         }
+    }
+
+    // remove segments in reverse order to keep indices stable
+    for idx in to_remove.into_iter().rev() {
+        // adjust current_segment index if needed
+        if let Some(ci) = local.current_segment {
+            if idx < ci {
+                local.current_segment = Some(ci - 1);
+            } else if idx == ci {
+                local.current_segment = None;
+            }
+        }
+        local.segments.remove(idx);
     }
 }
 
