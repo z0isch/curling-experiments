@@ -80,6 +80,7 @@ pub fn spawn_mouse_trail(
                     // start without a mesh; we'll insert Mesh2d once we have >=2 points
                     MeshMaterial2d(mat_handle.clone()),
                     Transform::from_xyz(0.0, 0.0, 6.0),
+                    Pickable::IGNORE,
                 ))
                 .id();
 
@@ -90,6 +91,7 @@ pub fn spawn_mouse_trail(
                     Mesh2d(meshes.add(Circle::new(radius))),
                     MeshMaterial2d(mat_handle.clone()),
                     Transform::from_xyz(world_pos.x, world_pos.y, 5.9),
+                    Pickable::IGNORE,
                 ))
                 .id();
             commands.entity(parent).add_children(&[child]);
@@ -151,6 +153,7 @@ pub fn spawn_mouse_trail(
                                 Mesh2d(meshes.add(Circle::new(radius))),
                                 MeshMaterial2d(seg_mat.clone()),
                                 Transform::from_xyz(p.x, p.y, 5.9),
+                                Pickable::IGNORE,
                             ))
                             .id();
                         new_children.push(child);
