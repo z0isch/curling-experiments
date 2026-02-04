@@ -177,6 +177,7 @@ fn on_level_complete(
     meshes: ResMut<Assets<Mesh>>,
     materials: ResMut<Assets<ColorMaterial>>,
     scratch_materials: ResMut<Assets<ScratchOffMaterial>>,
+    current_drag_tile_type: ResMut<CurrentDragTileType>,
 ) {
     // TODO: get the next level after the current one in the iterator
     if let Some(next_level) = CurrentLevel::iterator()
@@ -194,6 +195,7 @@ fn on_level_complete(
             meshes,
             materials,
             scratch_materials,
+            current_drag_tile_type,
             Some(&get_level(*next_level)),
         );
     }
@@ -231,6 +233,7 @@ fn restart_game_on_r_key_pressed(
     meshes: ResMut<Assets<Mesh>>,
     materials: ResMut<Assets<ColorMaterial>>,
     scratch_materials: ResMut<Assets<ScratchOffMaterial>>,
+    current_drag_tile_type: ResMut<CurrentDragTileType>,
     on_level: Res<OnLevel>,
 ) {
     if input.just_pressed(KeyCode::KeyR) {
@@ -243,6 +246,7 @@ fn restart_game_on_r_key_pressed(
             meshes,
             materials,
             scratch_materials,
+            current_drag_tile_type,
             Some(&on_level.0),
         );
     }
@@ -256,8 +260,10 @@ pub fn restart_game(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
     mut scratch_materials: ResMut<Assets<ScratchOffMaterial>>,
+    mut current_drag_tile_type: ResMut<CurrentDragTileType>,
     level: Option<&Level>,
 ) {
+    *current_drag_tile_type = CurrentDragTileType(TileType::MaintainSpeed);
     paused.0 = true;
     let debug_level = get_level(debug_ui_state.current_level);
     let level = level.unwrap_or(&debug_level);

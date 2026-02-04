@@ -7,7 +7,7 @@ use crate::{
     level::{CurrentLevel, Facing},
     restart_game,
     stone::Stone,
-    tile::ScratchOffMaterial,
+    tile::{CurrentDragTileType, ScratchOffMaterial},
 };
 
 #[derive(Clone, Debug)]
@@ -123,6 +123,7 @@ pub fn on_debug_ui_level_change(
     meshes: ResMut<Assets<Mesh>>,
     materials: ResMut<Assets<ColorMaterial>>,
     scratch_materials: ResMut<Assets<ScratchOffMaterial>>,
+    current_drag_tile_type: ResMut<CurrentDragTileType>,
 ) {
     let old_level = maybe_old_level.replace(debug_ui_state.current_level);
     if old_level == Some(debug_ui_state.current_level) || old_level.is_none() {
@@ -137,6 +138,7 @@ pub fn on_debug_ui_level_change(
         meshes,
         materials,
         scratch_materials,
+        current_drag_tile_type,
         None,
     );
 }
