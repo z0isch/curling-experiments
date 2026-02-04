@@ -8,8 +8,4 @@
 
   - still probably want a debug mode where we spawn the debug_ui and disable the actual game
 
-- tile that pushes in a direction to add velocity
-
-- xbetter broom selection UI
-
-- investigate click up and click down breaking broom switching
+- better broom selection UI
