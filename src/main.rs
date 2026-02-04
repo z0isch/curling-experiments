@@ -534,6 +534,13 @@ fn drag_with_keyboard(
     tile_query: Single<(Entity, Option<&mut TileDragging>), With<MouseHover>>,
 ) {
     if let Some(just_pressed) = input.get_just_pressed().next() {
+        //Ignore brush changes
+        if *just_pressed == KeyCode::Digit1
+            || *just_pressed == KeyCode::Digit2
+            || *just_pressed == KeyCode::Digit3
+        {
+            return;
+        }
         let (entity, tile_dragging_opt) = tile_query.into_inner();
 
         match tile_dragging_opt {
