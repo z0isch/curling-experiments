@@ -2,7 +2,7 @@ use bevy::prelude::*;
 
 use crate::hex_grid::{HexCoordinate, HexGrid, hex_to_world};
 use crate::tile::{TileDragging, TileType, compute_tile_effects};
-use crate::{DebugUIState, LevelComplete};
+use crate::{DebugUIState, LevelComplete, StoneStopped};
 
 #[derive(Component, Clone, Debug)]
 pub struct Stone {
@@ -75,6 +75,8 @@ pub fn update_stone_position(
                 velocity.0 = Vec2::ZERO;
                 stone.trail_accum = 0.0;
                 commands.trigger(LevelComplete);
+            } else if speed <= 2. {
+                commands.trigger(StoneStopped);
             }
         }
     }

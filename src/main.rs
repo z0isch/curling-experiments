@@ -35,18 +35,10 @@ use crate::{
     level::{CurrentLevel, get_initial_stone_velocity, get_level},
     stone::apply_stone_collision,
     tile::{MouseHover, update_tile_material, update_tile_type},
-    ui::{
-        CountdownUI, spawn_broom_type_ui, spawn_countdown, update_broom_type_ui, update_countdown,
-    },
 };
 
 #[derive(Component)]
 struct StoneMoveLine;
-#[derive(Resource)]
-pub struct Countdown {
-    pub timer: Timer,
-    pub count: u32,
-}
 
 #[derive(Resource, Default)]
 pub struct PhysicsPaused(pub bool);
@@ -54,8 +46,14 @@ pub struct PhysicsPaused(pub bool);
 #[derive(Event)]
 pub struct LevelComplete;
 
+#[derive(Event)]
+pub struct StoneStopped;
+
+#[derive(Event)]
+pub struct LevelStart(pub CurrentLevel);
+
 #[derive(Resource)]
-struct OnLevel(pub CurrentLevel);
+struct OnLevel(pub Level);
 
 fn main() {
     App::new()
@@ -76,8 +74,15 @@ fn main() {
             EntropyPlugin::<WyRand>::default(),
         ))
         .add_plugins(CrtPostProcessPlugin)
+        .add_plugins(ui::plugin)
         .add_systems(EguiPrimaryContextPass, debug_ui)
         .add_systems(Startup, setup)
+        .add_systems(
+            PostStartup,
+            |mut commands: Commands, level: Res<OnLevel>| {
+                commands.trigger(LevelStart(level.0.current_level));
+            },
+        )
         .add_systems(
             FixedUpdate,
             (
@@ -100,9 +105,7 @@ fn main() {
                 toggle_physics_pause,
                 toggle_tile_coordinates,
                 update_tile_material,
-                update_countdown,
                 switch_broom,
-                update_broom_type_ui,
                 drag_with_keyboard,
             )
                 .in_set(MainUpdateSystems),
@@ -126,12 +129,16 @@ fn setup(
     mut scratch_materials: ResMut<Assets<ScratchOffMaterial>>,
     mut mesh_picking_settings: ResMut<MeshPickingSettings>,
 ) {
+    commands.spawn((Camera2d, CrtSettings::default(), MeshPickingCamera));
+
     mesh_picking_settings.require_markers = true;
+
     commands.insert_resource(PhysicsPaused(true));
 
     let current_level = CurrentLevel::default();
-    commands.insert_resource(OnLevel(current_level));
     let level = get_level(current_level);
+    commands.insert_resource(OnLevel(level.clone()));
+
     let debug_ui_state = DebugUIState {
         hex_radius: 60.0,
         stone_radius: 15.0,
@@ -153,8 +160,6 @@ fn setup(
             .collect(),
     };
 
-    commands.spawn((Camera2d, CrtSettings::default(), MeshPickingCamera));
-
     let grid = HexGrid::new(debug_ui_state.hex_radius, &level);
     let tile_assets = TileAssets::new(&mut meshes, &mut materials, &grid);
 
@@ -173,13 +178,6 @@ fn setup(
     commands.insert_resource(tile_assets);
     commands.insert_resource(debug_ui_state);
     commands.insert_resource(CurrentDragTileType(TileType::MaintainSpeed));
-
-    spawn_broom_type_ui(&mut commands);
-    spawn_countdown(&mut commands, level.countdown);
-    commands.insert_resource(Countdown {
-        timer: Timer::from_seconds(1.0, TimerMode::Repeating),
-        count: level.countdown,
-    });
 }
 
 fn on_level_complete(
@@ -187,29 +185,26 @@ fn on_level_complete(
     commands: Commands,
     mut on_level: ResMut<OnLevel>,
     grid: Single<Entity, With<HexGrid>>,
-    countdown_ui_query: Query<Entity, With<CountdownUI>>,
     debug_ui_state: Res<DebugUIState>,
     stone_query: Query<Entity, With<Stone>>,
     paused: ResMut<PhysicsPaused>,
-    countdown: ResMut<Countdown>,
     meshes: ResMut<Assets<Mesh>>,
     materials: ResMut<Assets<ColorMaterial>>,
     scratch_materials: ResMut<Assets<ScratchOffMaterial>>,
 ) {
     // TODO: get the next level after the current one in the iterator
     if let Some(next_level) = CurrentLevel::iterator()
-        .skip_while(|&level| level != &on_level.0)
+        .skip_while(|&level| level != &on_level.0.current_level)
         .nth(1)
     {
-        on_level.0 = *next_level;
+        on_level.0 = get_level(*next_level).clone();
+
         restart_game(
             commands,
             grid,
-            countdown_ui_query,
             debug_ui_state,
             stone_query,
             paused,
-            countdown,
             meshes,
             materials,
             scratch_materials,
@@ -244,11 +239,9 @@ fn restart_game_on_r_key_pressed(
     input: Res<ButtonInput<KeyCode>>,
     commands: Commands,
     grid: Single<Entity, With<HexGrid>>,
-    countdown_ui_query: Query<Entity, With<CountdownUI>>,
     debug_ui_state: Res<DebugUIState>,
     stone_query: Query<Entity, With<Stone>>,
     paused: ResMut<PhysicsPaused>,
-    countdown: ResMut<Countdown>,
     meshes: ResMut<Assets<Mesh>>,
     materials: ResMut<Assets<ColorMaterial>>,
     scratch_materials: ResMut<Assets<ScratchOffMaterial>>,
@@ -258,27 +251,22 @@ fn restart_game_on_r_key_pressed(
         restart_game(
             commands,
             grid,
-            countdown_ui_query,
             debug_ui_state,
             stone_query,
             paused,
-            countdown,
             meshes,
             materials,
             scratch_materials,
-            Some(&get_level(on_level.0)),
+            Some(&on_level.0),
         );
     }
 }
-/// System that restarts the game when 'R' key is pressed
 pub fn restart_game(
     mut commands: Commands,
     grid: Single<Entity, With<HexGrid>>,
-    countdown_ui_query: Query<Entity, With<CountdownUI>>,
     debug_ui_state: Res<DebugUIState>,
     stone_query: Query<Entity, With<Stone>>,
     mut paused: ResMut<PhysicsPaused>,
-    mut countdown: ResMut<Countdown>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
     mut scratch_materials: ResMut<Assets<ScratchOffMaterial>>,
@@ -313,12 +301,7 @@ pub fn restart_game(
             debug_ui_state.stone_radius,
         ));
     }
-    for entity in countdown_ui_query {
-        commands.entity(entity).despawn();
-    }
-    countdown.count = level.countdown;
-    countdown.timer.reset();
-    spawn_countdown(&mut commands, level.countdown);
+    commands.trigger(LevelStart(debug_ui_state.current_level));
 }
 
 fn draw_move_line(

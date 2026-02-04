@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 
 use crate::{
-    Countdown, CountdownUI, PhysicsPaused,
+    PhysicsPaused,
     hex_grid::HexGrid,
     level::{CurrentLevel, Facing},
     restart_game,
@@ -118,10 +118,8 @@ pub fn on_debug_ui_level_change(
     debug_ui_state: Res<DebugUIState>,
     commands: Commands,
     grid: Single<Entity, With<HexGrid>>,
-    countdown_ui_query: Query<Entity, With<CountdownUI>>,
     stone_query: Query<Entity, With<Stone>>,
     paused: ResMut<PhysicsPaused>,
-    countdown: ResMut<Countdown>,
     meshes: ResMut<Assets<Mesh>>,
     materials: ResMut<Assets<ColorMaterial>>,
     scratch_materials: ResMut<Assets<ScratchOffMaterial>>,
@@ -133,11 +131,9 @@ pub fn on_debug_ui_level_change(
     restart_game(
         commands,
         grid,
-        countdown_ui_query,
         debug_ui_state,
         stone_query,
         paused,
-        countdown,
         meshes,
         materials,
         scratch_materials,

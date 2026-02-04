@@ -6,10 +6,10 @@ use crate::{hex_grid::HexCoordinate, tile::TileType};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum CurrentLevel {
+    #[default]
     Level1,
     Level2,
     Level3,
-    #[default]
     Level4,
 }
 
@@ -82,8 +82,9 @@ impl Display for Facing {
     }
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Resource, Clone, PartialEq, Debug)]
 pub struct Level {
+    pub current_level: CurrentLevel,
     pub grid: HashMap<HexCoordinate, TileType>,
     pub goal_coordinate: HexCoordinate,
     pub stone_configs: Vec<StoneConfig>,
@@ -146,6 +147,7 @@ fn get_level1() -> Level {
     ]);
 
     Level {
+        current_level: CurrentLevel::Level1,
         grid,
         goal_coordinate,
         stone_configs: vec![StoneConfig {
@@ -194,6 +196,7 @@ fn get_level2() -> Level {
     ]);
 
     Level {
+        current_level: CurrentLevel::Level2,
         grid,
         goal_coordinate,
         stone_configs: vec![StoneConfig {
@@ -236,6 +239,7 @@ fn get_level3() -> Level {
     ]);
 
     Level {
+        current_level: CurrentLevel::Level3,
         grid,
         goal_coordinate,
         stone_configs: vec![StoneConfig {
@@ -319,6 +323,7 @@ fn get_level4() -> Level {
     ]);
 
     Level {
+        current_level: CurrentLevel::Level4,
         grid,
         goal_coordinate,
         stone_configs: vec![StoneConfig {
