@@ -10,4 +10,6 @@
 
 - tile that pushes in a direction to add velocity
 
-- better broom selection UI
+- xbetter broom selection UI
+
+- investigate click up and click down breaking broom switching
