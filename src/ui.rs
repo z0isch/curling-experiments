@@ -286,7 +286,7 @@ fn level_2_tip_ui() -> Vec<Text> {
 
 fn level_3_tip_ui() -> Vec<Text> {
     [
-        Text::new("I wonder what the #3 broom does..."),
+        Text::new("I wonder what the #3 does..."),
         Text::new("Remember that you can hit R at any time to restart"),
     ]
     .to_vec()
