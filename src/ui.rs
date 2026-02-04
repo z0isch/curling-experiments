@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
 use crate::{
-    LevelStart, OnLevel, PhysicsPaused, StoneStopped,
+    GameStart, LevelStart, OnLevel, PhysicsPaused, StoneStopped,
     level::CurrentLevel,
     tile::{CurrentDragTileType, TileType},
 };
@@ -36,6 +36,12 @@ pub struct Level0UI;
 #[derive(Component)]
 pub struct BottomLeftUI;
 
+#[derive(Component)]
+pub struct MainUI;
+
+#[derive(Component)]
+pub struct TitleScreenUI;
+
 pub(super) fn plugin(app: &mut App) {
     app.add_systems(Startup, setup)
         .add_systems(Update, (update_broom_type_ui, update_countdown))
@@ -44,18 +50,73 @@ pub(super) fn plugin(app: &mut App) {
 }
 
 fn setup(mut commands: Commands) {
-    commands.spawn(bottom_left_ui());
-    commands.spawn(countdown_ui());
-    commands.spawn(stone_stopped_ui());
-    commands.spawn(broom_type_ui());
-
     commands.insert_resource(Countdown {
         timer: Timer::from_seconds(1.0, TimerMode::Repeating),
         count: 0,
     });
 }
 
-fn countdown_ui() -> impl Bundle {
+pub fn spawn_title_screen_ui(mut commands: Commands) {
+    commands
+        .spawn((
+            TitleScreenUI,
+            Node {
+                width: Val::Percent(100.0),
+                height: Val::Percent(100.0),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                flex_direction: FlexDirection::Column,
+                row_gap: Val::Px(50.0),
+                ..default()
+            },
+            Visibility::default(),
+        ))
+        .with_children(|parent| {
+            parent.spawn((
+                Text::new("CURLING"),
+                TextFont {
+                    font_size: 100.0,
+                    ..default()
+                },
+                TextColor(Color::WHITE),
+                BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.7)),
+            ));
+
+            parent
+                .spawn((
+                    BorderColor::all(Color::BLACK),
+                    BackgroundColor(Color::WHITE),
+                    Node {
+                        width: px(150.0),
+                        height: px(65.0),
+                        border: UiRect::all(px(5.0)),
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
+                        ..default()
+                    },
+                    Visibility::default(),
+                ))
+                .with_children(|p2| {
+                    p2.spawn((
+                        Text::new("Play"),
+                        TextColor(Color::BLACK),
+                        TextFont::default().with_font_size(40.0),
+                    ));
+                })
+                .observe(
+                    |_ev: On<Pointer<Click>>,
+                     mut commands: Commands,
+                     title_screen_query: Query<Entity, With<TitleScreenUI>>| {
+                        commands.trigger(GameStart);
+                        for e in title_screen_query.iter() {
+                            commands.entity(e).despawn();
+                        }
+                    },
+                );
+        });
+}
+
+fn countdown_ui(time_left: u32) -> impl Bundle {
     (
         Node {
             width: Val::Percent(100.0),
@@ -66,11 +127,12 @@ fn countdown_ui() -> impl Bundle {
         },
         Pickable::IGNORE,
         CountdownUI,
-        Visibility::Hidden,
+        MainUI,
+        Visibility::Visible,
         children![(
             BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.7)),
             CountdownText,
-            Text::new(""),
+            Text::new(time_left.to_string()),
             TextFont {
                 font_size: 120.0,
                 ..default()
@@ -81,27 +143,34 @@ fn countdown_ui() -> impl Bundle {
     )
 }
 
-fn bottom_left_ui() -> impl Bundle {
-    (
-        Node {
-            position_type: PositionType::Absolute,
-            left: Val::Px(16.0),
-            bottom: Val::Px(16.0),
-            padding: UiRect::all(Val::Px(8.0)),
-            ..default()
-        },
-        Pickable::IGNORE,
-        BottomLeftUI,
-        children![(
+fn spawn_bottom_left_ui(mut commands: Commands, current_level: &CurrentLevel) {
+    commands
+        .spawn((
             Node {
-                width: Val::Percent(100.0),
-                height: Val::Percent(100.0),
-                flex_direction: FlexDirection::Column,
-                row_gap: Val::Px(20.0),
+                position_type: PositionType::Absolute,
+                left: Val::Px(16.0),
+                bottom: Val::Px(16.0),
+                padding: UiRect::all(Val::Px(8.0)),
                 ..default()
             },
-            children![
-                (
+            Pickable::IGNORE,
+            BottomLeftUI,
+            Visibility::default(),
+            MainUI,
+        ))
+        .with_children(|p1| {
+            p1.spawn((
+                Node {
+                    width: Val::Percent(100.0),
+                    height: Val::Percent(100.0),
+                    flex_direction: FlexDirection::Column,
+                    row_gap: Val::Px(20.0),
+                    ..default()
+                },
+                Visibility::default(),
+            ))
+            .with_children(|p2| {
+                p2.spawn((
                     TipUI,
                     Node {
                         width: Val::Percent(100.0),
@@ -110,8 +179,16 @@ fn bottom_left_ui() -> impl Bundle {
                         ..default()
                     },
                     BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.5)),
-                ),
-                (
+                ))
+                .with_children(|p3| {
+                    if let Some(tips) = tip_ui(current_level) {
+                        for tip in tips {
+                            p3.spawn(tip);
+                        }
+                    }
+                });
+
+                p2.spawn((
                     Node {
                         width: Val::Percent(100.0),
                         height: Val::Percent(100.0),
@@ -119,40 +196,40 @@ fn bottom_left_ui() -> impl Bundle {
                         row_gap: Val::Px(5.0),
                         ..default()
                     },
+                    Visibility::default(),
                     BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.7)),
-                    children![
-                        (
-                            Text::new("Controls"),
-                            TextFont {
-                                font_size: 25.0,
-                                ..default()
-                            },
-                            TextColor(Color::WHITE),
-                            Pickable::IGNORE
-                        ),
-                        (
-                            Text::new("R: Restart Level"),
-                            TextFont {
-                                font_size: 20.0,
-                                ..default()
-                            },
-                            TextColor(Color::WHITE),
-                            Pickable::IGNORE
-                        ),
-                        (
-                            Text::new("1-3: Switch Brooms"),
-                            TextFont {
-                                font_size: 20.0,
-                                ..default()
-                            },
-                            TextColor(Color::WHITE),
-                            Pickable::IGNORE
-                        )
-                    ]
-                )
-            ]
-        )],
-    )
+                ))
+                .with_children(|p3| {
+                    p3.spawn((
+                        Text::new("Controls"),
+                        TextFont {
+                            font_size: 25.0,
+                            ..default()
+                        },
+                        TextColor(Color::WHITE),
+                        Pickable::IGNORE,
+                    ));
+                    p3.spawn((
+                        Text::new("R: Restart Level"),
+                        TextFont {
+                            font_size: 20.0,
+                            ..default()
+                        },
+                        TextColor(Color::WHITE),
+                        Pickable::IGNORE,
+                    ));
+                    p3.spawn((
+                        Text::new("1-3: Switch Brooms"),
+                        TextFont {
+                            font_size: 20.0,
+                            ..default()
+                        },
+                        TextColor(Color::WHITE),
+                        Pickable::IGNORE,
+                    ));
+                });
+            });
+        });
 }
 
 fn level_0_ui() -> impl Bundle {
@@ -247,7 +324,7 @@ fn tip_ui(current_level: &CurrentLevel) -> Option<Vec<impl Bundle>> {
     Some(bundles)
 }
 
-fn broom_type_ui() -> impl Bundle {
+fn broom_type_ui(tile_type: &TileType) -> impl Bundle {
     (
         Node {
             width: Val::Percent(100.0),
@@ -255,11 +332,12 @@ fn broom_type_ui() -> impl Bundle {
             padding: UiRect::all(Val::Px(50.0)),
             ..default()
         },
+        MainUI,
         BroomUI,
         Pickable::IGNORE,
         children![(
             BroomTypeText,
-            Text::new(""),
+            Text::new(get_broom_type_text(tile_type)),
             TextFont {
                 font_size: 30.0,
                 ..default()
@@ -282,7 +360,6 @@ fn stone_stopped_ui() -> impl Bundle {
         },
         Pickable::IGNORE,
         StoneStoppedUI,
-        Visibility::Hidden,
         children![(
             BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.7)),
             Text::new("Too bad! Press R to retry."),
@@ -296,26 +373,30 @@ fn stone_stopped_ui() -> impl Bundle {
     )
 }
 
+fn get_broom_type_text(tile_type: &TileType) -> String {
+    format!(
+        "Broom: {}",
+        match tile_type {
+            TileType::MaintainSpeed => "Straight",
+            TileType::TurnCounterclockwise => "Counterclockwise",
+            TileType::TurnClockwise => "Clockwise",
+
+            //Shouldn't be able to drag these
+            TileType::SlowDown => "SlowDown",
+            TileType::Goal => "Goal",
+            TileType::Wall => "Wall",
+            TileType::SpeedUp(_) => "SpeedUp",
+        }
+    )
+}
+
 fn update_broom_type_ui(
     current_drag_tile_type: Res<CurrentDragTileType>,
     mut text_query: Query<&mut Text, With<BroomTypeText>>,
 ) {
     if current_drag_tile_type.is_changed() {
         for mut text in &mut text_query {
-            **text = format!(
-                "Broom: {}",
-                match current_drag_tile_type.0 {
-                    TileType::MaintainSpeed => "Straight",
-                    TileType::TurnCounterclockwise => "Counterclockwise",
-                    TileType::TurnClockwise => "Clockwise",
-
-                    //Shouldn't be able to drag these
-                    TileType::SlowDown => "SlowDown",
-                    TileType::Goal => "Goal",
-                    TileType::Wall => "Wall",
-                    TileType::SpeedUp(_) => "SpeedUp",
-                }
-            );
+            **text = get_broom_type_text(&current_drag_tile_type.0)
         }
     }
 }
@@ -340,9 +421,7 @@ fn update_countdown(
         countdown.count = countdown.count.saturating_sub(1);
 
         if countdown.count == 0 {
-            commands
-                .entity(*countdown_ui_query)
-                .insert(Visibility::Hidden);
+            commands.entity(*countdown_ui_query).despawn();
             paused.0 = false;
         } else {
             // Update the countdown text
@@ -358,71 +437,46 @@ fn update_countdown(
 fn on_level_start(
     mut _ev: On<LevelStart>,
     mut commands: Commands,
-    stone_stopped_ui: Single<Entity, With<StoneStoppedUI>>,
-    countdown_ui: Single<Entity, With<CountdownUI>>,
     mut countdown: ResMut<Countdown>,
     on_level: Res<OnLevel>,
-    mut countdown_text: Single<&mut Text, With<CountdownText>>,
-    tip_ui_entity: Single<Entity, With<TipUI>>,
-    children_query: Query<&Children>,
-    broom_ui_entity: Single<Entity, With<BroomUI>>,
     level_0_ui_entity: Query<Entity, With<Level0UI>>,
-    bottom_left_ui_entity: Single<Entity, With<BottomLeftUI>>,
+    main_ui_entity: Query<Entity, With<MainUI>>,
+    current_drag_tile_type: Res<CurrentDragTileType>,
 ) {
-    log::info!("Level start: {:?}", on_level.0.current_level);
+    for entity in main_ui_entity.iter() {
+        commands.entity(entity).despawn();
+    }
+
+    for entity in level_0_ui_entity.iter() {
+        commands.entity(entity).despawn();
+    }
+
     let level = &on_level.0;
     match level.current_level {
         CurrentLevel::Level0 => {
-            commands.entity(*broom_ui_entity).insert(Visibility::Hidden);
-            commands
-                .entity(*bottom_left_ui_entity)
-                .insert(Visibility::Hidden);
             commands.spawn(level_0_ui());
         }
         _ => {
-            for entity in level_0_ui_entity.iter() {
-                commands.entity(entity).despawn();
+            commands.spawn(broom_type_ui(&current_drag_tile_type.0));
+            if let Some(c) = level.countdown {
+                countdown.count = c;
+                countdown.timer.reset();
+                commands.spawn(countdown_ui(c));
             }
-            commands
-                .entity(*bottom_left_ui_entity)
-                .insert(Visibility::Visible);
-            commands
-                .entity(*broom_ui_entity)
-                .insert(Visibility::Visible);
+            spawn_bottom_left_ui(commands, &level.current_level);
         }
-    }
-
-    if let Some(c) = level.countdown {
-        countdown.count = c;
-        countdown.timer.reset();
-        **countdown_text = Text(c.to_string());
-        commands.entity(*countdown_ui).insert(Visibility::Visible);
-
-        commands
-            .entity(*stone_stopped_ui)
-            .insert(Visibility::Hidden);
-    }
-
-    if let Ok(children) = children_query.get(*tip_ui_entity) {
-        for child in children.iter() {
-            commands.entity(child).despawn();
-        }
-    }
-    if let Some(tip_ui) = tip_ui(&level.current_level) {
-        commands.entity(*tip_ui_entity).with_children(|parent| {
-            for bundle in tip_ui {
-                parent.spawn(bundle);
-            }
-        });
     }
 }
 
 fn on_stone_stopped(
     mut _ev: On<StoneStopped>,
     mut commands: Commands,
-    stone_stopped_ui: Single<Entity, With<StoneStoppedUI>>,
+    main_ui_entity: Query<Entity, With<MainUI>>,
+    stone_stopped_ui_entity: Query<Entity, With<StoneStoppedUI>>,
 ) {
-    commands
-        .entity(*stone_stopped_ui)
-        .insert(Visibility::Visible);
+    for entity in main_ui_entity.iter() {
+        if stone_stopped_ui_entity.is_empty() {
+            commands.spawn((stone_stopped_ui(), ChildOf(entity)));
+        }
+    }
 }

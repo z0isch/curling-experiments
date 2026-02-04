@@ -30,6 +30,7 @@ use tile::{
 };
 
 use crate::level::Level;
+use crate::ui::spawn_title_screen_ui;
 use crate::{
     debug_ui::on_debug_ui_level_change,
     level::{CurrentLevel, get_initial_stone_velocity, get_level},
@@ -48,6 +49,9 @@ pub struct LevelComplete;
 
 #[derive(Event)]
 pub struct StoneStopped;
+
+#[derive(Event)]
+pub struct GameStart;
 
 #[derive(Event)]
 pub struct LevelStart(pub CurrentLevel);
@@ -77,12 +81,6 @@ fn main() {
         .add_plugins(ui::plugin)
         .add_systems(EguiPrimaryContextPass, debug_ui)
         .add_systems(Startup, setup)
-        .add_systems(
-            PostStartup,
-            |mut commands: Commands, level: Res<OnLevel>| {
-                commands.trigger(LevelStart(level.0.current_level));
-            },
-        )
         .add_systems(
             FixedUpdate,
             (
@@ -116,6 +114,7 @@ fn main() {
             (restart_game_on_r_key_pressed, on_debug_ui_level_change).after(MainUpdateSystems),
         )
         .add_observer(on_level_complete)
+        .add_observer(on_game_start)
         .add_systems(Update, update_crt_time)
         .run();
 }
@@ -127,7 +126,6 @@ fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
-    mut scratch_materials: ResMut<Assets<ScratchOffMaterial>>,
     mut mesh_picking_settings: ResMut<MeshPickingSettings>,
 ) {
     commands.spawn((Camera2d, CrtSettings::default(), MeshPickingCamera));
@@ -135,7 +133,6 @@ fn setup(
     mesh_picking_settings.require_markers = true;
 
     commands.insert_resource(PhysicsPaused(true));
-
     let current_level = CurrentLevel::default();
     let level = get_level(current_level);
     commands.insert_resource(OnLevel(level.clone()));
@@ -163,22 +160,10 @@ fn setup(
 
     let grid = HexGrid::new(&level);
     let tile_assets = TileAssets::new(&mut meshes, &mut materials, &grid);
-
-    spawn_hex_grid(&mut commands, &grid, &tile_assets, &mut scratch_materials);
-    for stone_config in level.stone_configs {
-        commands.spawn(stone(
-            &mut meshes,
-            &mut materials,
-            &grid,
-            &stone_config.start_coordinate,
-            get_initial_stone_velocity(&stone_config.facing, &stone_config.velocity_magnitude),
-            debug_ui_state.stone_radius,
-        ));
-    }
-
     commands.insert_resource(tile_assets);
     commands.insert_resource(debug_ui_state);
     commands.insert_resource(CurrentDragTileType(TileType::MaintainSpeed));
+    spawn_title_screen_ui(commands);
 }
 
 fn on_level_complete(
@@ -560,4 +545,29 @@ fn level_0_complete_check(
     {
         commands.trigger(LevelComplete);
     }
+}
+
+fn on_game_start(
+    _event: On<GameStart>,
+    mut commands: Commands,
+    debug_ui_state: Res<DebugUIState>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+    mut scratch_materials: ResMut<Assets<ScratchOffMaterial>>,
+    on_level: Res<OnLevel>,
+    tile_assets: Res<TileAssets>,
+) {
+    let grid = HexGrid::new(&on_level.0);
+    spawn_hex_grid(&mut commands, &grid, &tile_assets, &mut scratch_materials);
+    for stone_config in &on_level.0.stone_configs {
+        commands.spawn(stone(
+            &mut meshes,
+            &mut materials,
+            &grid,
+            &stone_config.start_coordinate,
+            get_initial_stone_velocity(&stone_config.facing, &stone_config.velocity_magnitude),
+            debug_ui_state.stone_radius,
+        ));
+    }
+    commands.trigger(LevelStart(on_level.0.current_level));
 }
