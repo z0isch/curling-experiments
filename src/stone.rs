@@ -181,6 +181,7 @@ pub fn apply_tile_velocity_effects(
             debug_ui_state.slow_down_factor,
             debug_ui_state.rotation_factor,
             debug_ui_state.min_sweep_distance,
+            debug_ui_state.speed_up_factor,
         );
     }
 }

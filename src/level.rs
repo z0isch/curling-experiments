@@ -6,18 +6,20 @@ use crate::{hex_grid::HexCoordinate, tile::TileType};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum CurrentLevel {
-    #[default]
     Level1,
     Level2,
     Level3,
+    #[default]
+    Level4,
 }
 
 impl CurrentLevel {
     pub fn iterator() -> Iter<'static, CurrentLevel> {
-        static LEVELS: [CurrentLevel; 3] = [
+        static LEVELS: [CurrentLevel; 4] = [
             CurrentLevel::Level1,
             CurrentLevel::Level2,
             CurrentLevel::Level3,
+            CurrentLevel::Level4,
         ];
         LEVELS.iter()
     }
@@ -29,6 +31,7 @@ impl Display for CurrentLevel {
             CurrentLevel::Level1 => write!(f, "Level 1"),
             CurrentLevel::Level2 => write!(f, "Level 2"),
             CurrentLevel::Level3 => write!(f, "Level 3"),
+            CurrentLevel::Level4 => write!(f, "Level 4"),
         }
     }
 }
@@ -55,6 +58,22 @@ impl Facing {
         ];
         DIRECTIONS.iter()
     }
+
+    pub fn to_vector(&self) -> Vec2 {
+        Vec2::from_angle(self.to_angle())
+    }
+
+    pub fn to_angle(&self) -> f32 {
+        use std::f32::consts::{FRAC_PI_2, FRAC_PI_3, FRAC_PI_6};
+        match self {
+            Facing::Up => FRAC_PI_2,                    // 90° - straight up
+            Facing::UpRight => FRAC_PI_6,               // 30° - up and right
+            Facing::DownRight => -FRAC_PI_6,            // -30° - down and right
+            Facing::Down => -FRAC_PI_2,                 // -90° - straight down
+            Facing::DownLeft => -FRAC_PI_2 - FRAC_PI_3, // -120° - down and left
+            Facing::UpLeft => FRAC_PI_2 + FRAC_PI_3,    // 120° - up and left
+        }
+    }
 }
 
 impl Display for Facing {
@@ -79,16 +98,7 @@ pub struct StoneConfig {
 }
 
 pub fn get_initial_stone_velocity(facing: &Facing, stone_velocity_magnitude: &f32) -> Vec2 {
-    use std::f32::consts::{FRAC_PI_2, FRAC_PI_3, FRAC_PI_6};
-    let angle = match facing {
-        Facing::Up => FRAC_PI_2,                    // 90° - straight up
-        Facing::UpRight => FRAC_PI_6,               // 30° - up and right
-        Facing::DownRight => -FRAC_PI_6,            // -30° - down and right
-        Facing::Down => -FRAC_PI_2,                 // -90° - straight down
-        Facing::DownLeft => -FRAC_PI_2 - FRAC_PI_3, // -120° - down and left
-        Facing::UpLeft => FRAC_PI_2 + FRAC_PI_3,    // 120° - up and left
-    };
-    Vec2::from_angle(angle) * *stone_velocity_magnitude
+    Facing::to_vector(facing) * *stone_velocity_magnitude
 }
 
 pub fn get_level(current_level: CurrentLevel) -> Level {
@@ -96,6 +106,7 @@ pub fn get_level(current_level: CurrentLevel) -> Level {
         CurrentLevel::Level1 => get_level1(),
         CurrentLevel::Level2 => get_level2(),
         CurrentLevel::Level3 => get_level3(),
+        CurrentLevel::Level4 => get_level4(),
     }
 }
 
@@ -221,6 +232,89 @@ fn get_level3() -> Level {
         (HexCoordinate { q: 3, r: 2 }, TileType::SlowDown),
         (HexCoordinate { q: 4, r: 1 }, TileType::SlowDown),
         (HexCoordinate { q: 5, r: 1 }, TileType::SlowDown),
+        (goal_coordinate.clone(), TileType::Goal),
+    ]);
+
+    Level {
+        grid,
+        goal_coordinate,
+        stone_configs: vec![StoneConfig {
+            start_coordinate,
+            velocity_magnitude: 200.0,
+            facing: Facing::DownRight,
+        }],
+        countdown: 3,
+    }
+}
+
+fn get_level4() -> Level {
+    let goal_coordinate = HexCoordinate { q: 6, r: 4 };
+    let start_coordinate = HexCoordinate { q: 1, r: 1 };
+
+    let grid = HashMap::from([
+        (HexCoordinate { q: 0, r: 0 }, TileType::Wall),
+        (HexCoordinate { q: 0, r: 1 }, TileType::Wall),
+        (HexCoordinate { q: 0, r: 2 }, TileType::Wall),
+        (HexCoordinate { q: 0, r: 3 }, TileType::Wall),
+        (HexCoordinate { q: 0, r: 4 }, TileType::Wall),
+        (HexCoordinate { q: 0, r: 5 }, TileType::Wall),
+        //
+        (HexCoordinate { q: 1, r: 5 }, TileType::Wall),
+        (HexCoordinate { q: 2, r: 5 }, TileType::Wall),
+        (HexCoordinate { q: 3, r: 5 }, TileType::Wall),
+        (HexCoordinate { q: 4, r: 5 }, TileType::Wall),
+        (HexCoordinate { q: 5, r: 5 }, TileType::Wall),
+        (HexCoordinate { q: 6, r: 5 }, TileType::Wall),
+        (HexCoordinate { q: 7, r: 5 }, TileType::Wall),
+        //
+        (HexCoordinate { q: 7, r: 4 }, TileType::Wall),
+        (HexCoordinate { q: 7, r: 3 }, TileType::Wall),
+        (HexCoordinate { q: 7, r: 2 }, TileType::Wall),
+        (HexCoordinate { q: 7, r: 1 }, TileType::Wall),
+        (HexCoordinate { q: 7, r: 0 }, TileType::Wall),
+        //
+        (HexCoordinate { q: 6, r: 0 }, TileType::Wall),
+        (HexCoordinate { q: 5, r: 0 }, TileType::Wall),
+        (HexCoordinate { q: 4, r: 0 }, TileType::Wall),
+        (HexCoordinate { q: 3, r: 0 }, TileType::Wall),
+        (HexCoordinate { q: 2, r: 0 }, TileType::Wall),
+        (HexCoordinate { q: 1, r: 0 }, TileType::Wall),
+        //
+        //
+        (start_coordinate.clone(), TileType::MaintainSpeed),
+        (HexCoordinate { q: 1, r: 2 }, TileType::SlowDown),
+        (HexCoordinate { q: 1, r: 3 }, TileType::SlowDown),
+        (HexCoordinate { q: 1, r: 4 }, TileType::SlowDown),
+        //
+        (HexCoordinate { q: 2, r: 1 }, TileType::SlowDown),
+        (HexCoordinate { q: 2, r: 2 }, TileType::SlowDown),
+        (HexCoordinate { q: 2, r: 3 }, TileType::SlowDown),
+        (HexCoordinate { q: 2, r: 4 }, TileType::SlowDown),
+        //
+        (HexCoordinate { q: 3, r: 1 }, TileType::Wall),
+        (HexCoordinate { q: 3, r: 2 }, TileType::SlowDown),
+        (HexCoordinate { q: 3, r: 3 }, TileType::SlowDown),
+        (
+            HexCoordinate { q: 3, r: 4 },
+            TileType::SpeedUp(Facing::UpRight),
+        ),
+        //
+        (HexCoordinate { q: 4, r: 1 }, TileType::Wall),
+        (HexCoordinate { q: 4, r: 2 }, TileType::Wall),
+        (HexCoordinate { q: 4, r: 3 }, TileType::SlowDown),
+        (HexCoordinate { q: 4, r: 4 }, TileType::SlowDown),
+        //
+        (HexCoordinate { q: 5, r: 1 }, TileType::SlowDown),
+        (HexCoordinate { q: 5, r: 2 }, TileType::SlowDown),
+        (HexCoordinate { q: 5, r: 3 }, TileType::SlowDown),
+        (HexCoordinate { q: 5, r: 4 }, TileType::Wall),
+        //
+        (
+            HexCoordinate { q: 6, r: 1 },
+            TileType::SpeedUp(Facing::Down),
+        ),
+        (HexCoordinate { q: 6, r: 2 }, TileType::SlowDown),
+        (HexCoordinate { q: 6, r: 3 }, TileType::SlowDown),
         (goal_coordinate.clone(), TileType::Goal),
     ]);
 

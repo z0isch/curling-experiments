@@ -28,6 +28,7 @@ pub struct DebugUIState {
     pub snap_distance: f32,
     pub snap_velocity: f32,
     pub current_level: CurrentLevel,
+    pub speed_up_factor: f32,
 }
 
 pub fn debug_ui(mut contexts: EguiContexts, mut debug_ui_state: ResMut<DebugUIState>) -> Result {
@@ -80,6 +81,10 @@ pub fn debug_ui(mut contexts: EguiContexts, mut debug_ui_state: ResMut<DebugUISt
             debug_ui.add(
                 egui::Slider::new(&mut debug_ui_state.snap_velocity, 5.0..=100.0)
                     .text("Snap Velocity"),
+            );
+            debug_ui.add(
+                egui::Slider::new(&mut debug_ui_state.speed_up_factor, 0.0..=500.0)
+                    .text("Speed Up Factor"),
             );
 
             debug_ui.separator();

@@ -1,9 +1,11 @@
+use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
 use bevy::render::render_resource::AsBindGroup;
 use bevy::shader::ShaderRef;
 use bevy::sprite_render::Material2d;
 
 use crate::hex_grid::HexGrid;
+use crate::level::Facing;
 use crate::{DebugUIState, intersection};
 
 // ============================================================================
@@ -51,6 +53,14 @@ pub fn tile(
         progress: 0.0,
     });
 
+    let (arrow_visibility, arrow_rotation) = match &tile_type {
+        TileType::SpeedUp(facing) => (
+            Visibility::Visible,
+            Quat::from_rotation_z(facing.to_angle() - std::f32::consts::FRAC_PI_6),
+        ),
+        _ => (Visibility::Hidden, Quat::IDENTITY),
+    };
+
     (
         tile_type,
         Visibility::Visible,
@@ -80,17 +90,11 @@ pub fn tile(
                     .with_rotation(Quat::from_rotation_z(-std::f32::consts::FRAC_PI_6)),
             ),
             (
-                TileCoordinateText,
-                Visibility::Hidden,
-                Text2d::new(format!("{},{}", q, r)),
-                TextFont {
-                    font_size: 10.0,
-                    ..default()
-                },
-                TextColor(Color::BLACK),
-                Transform::from_xyz(0., 0., 2.0)
-                    .with_rotation(Quat::from_rotation_z(-std::f32::consts::FRAC_PI_6)),
-            )
+                Mesh2d(tile_assets.arrow_mesh.clone()),
+                MeshMaterial2d(tile_assets.arrow_material.clone()),
+                Transform::from_xyz(0., 0., 3.0).with_rotation(arrow_rotation),
+                arrow_visibility,
+            ),
         ],
     )
 }
@@ -120,6 +124,7 @@ pub enum TileType {
     TurnCounterclockwise,
     TurnClockwise,
     Goal,
+    SpeedUp(Facing),
 }
 
 #[derive(Component)]
@@ -151,8 +156,10 @@ pub struct CurrentDragTileType(pub TileType);
 pub struct TileAssets {
     pub hex_mesh: Handle<Mesh>,
     pub hex_border_mesh: Handle<Mesh>,
+    pub arrow_mesh: Handle<Mesh>,
     pub border_material: Handle<ColorMaterial>,
     pub line_material: Handle<ColorMaterial>,
+    pub arrow_material: Handle<ColorMaterial>,
 }
 
 impl TileAssets {
@@ -162,14 +169,24 @@ impl TileAssets {
         hex_grid: &HexGrid,
     ) -> Self {
         let border_thickness = 1.0;
+
+        let mut arrow_mesh = Mesh::new(PrimitiveTopology::TriangleList, default());
+        arrow_mesh.insert_attribute(
+            Mesh::ATTRIBUTE_POSITION,
+            vec![[20.0, 0.0, 0.0], [-7.5, 12.5, 0.0], [-7.5, -12.5, 0.0]],
+        );
+        arrow_mesh.insert_indices(Indices::U32(vec![0, 1, 2]));
+
         TileAssets {
             hex_mesh: meshes.add(RegularPolygon::new(
                 hex_grid.hex_radius - border_thickness,
                 6,
             )),
             hex_border_mesh: meshes.add(RegularPolygon::new(hex_grid.hex_radius, 6)),
+            arrow_mesh: meshes.add(arrow_mesh),
             border_material: materials.add(Color::BLACK),
             line_material: materials.add(COLORS[5]),
+            arrow_material: materials.add(COLORS[5]),
         }
     }
 }
@@ -205,6 +222,7 @@ fn get_tile_color(tile_type: &TileType) -> Color {
         TileType::TurnCounterclockwise => COLORS[2],
         TileType::TurnClockwise => COLORS[4],
         TileType::Goal => COLORS[5],
+        TileType::SpeedUp(_facing) => COLORS[0],
     }
 }
 
@@ -218,8 +236,11 @@ pub fn update_tile_material(
     fill_query: Query<&MeshMaterial2d<ScratchOffMaterial>, With<TileFill>>,
 ) {
     for (entity, tile_type, tile_dragging) in tile_query {
-        if *tile_type == TileType::Wall || *tile_type == TileType::Goal {
-            continue;
+        match tile_type {
+            TileType::Wall => continue,
+            TileType::Goal => continue,
+            TileType::SpeedUp(_facing) => continue,
+            _ => {}
         }
         let Ok(children) = children_query.get(entity) else {
             continue;
@@ -310,8 +331,11 @@ pub fn on_tile_dragging(
     drag: On<Pointer<Drag>>,
     mut tile: Single<(&mut TileDragging, &TileType), With<MouseHover>>,
 ) {
-    if *tile.1 == TileType::Goal || *tile.1 == TileType::Wall {
-        return;
+    match tile.1 {
+        TileType::Wall => return,
+        TileType::Goal => return,
+        TileType::SpeedUp(_facing) => return,
+        _ => {}
     }
     if let Some(last_position) = tile.0.last_position {
         tile.0.distance_dragged += (drag.pointer_location.position - last_position).length();
@@ -369,6 +393,7 @@ pub fn compute_tile_effects(
     slow_down_factor: f32,
     rotation_factor: f32,
     min_sweep_distance: f32,
+    speed_up_factor: f32,
 ) -> crate::stone::Velocity {
     let mut new_velocity = velocity.0;
 
@@ -454,6 +479,20 @@ pub fn compute_tile_effects(
                         new_velocity += direction * pull_strength;
                     }
                     total_drag += drag_coefficient * slow_down_factor * weighted_ratio;
+                }
+                TileType::SpeedUp(facing) => {
+                    // Pull towards the center of the goal
+                    let to_center = tile_position - stone_pos;
+                    let distance = to_center.length();
+                    if distance > (hex_grid.hex_radius / 2.) {
+                        let direction = to_center / distance;
+                        // Pull strength proportional to how much of stone is inside
+                        let pull_strength = 0.5 * weighted_ratio;
+                        new_velocity += direction * pull_strength;
+                    } else {
+                        let direction = facing.to_vector();
+                        new_velocity = direction * speed_up_factor;
+                    }
                 }
             }
         };

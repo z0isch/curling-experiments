@@ -140,6 +140,7 @@ fn setup(
         snap_distance: 40.0,
         snap_velocity: 40.0,
         current_level,
+        speed_up_factor: 250.0,
         stone_configs: level
             .stone_configs
             .iter()
@@ -364,6 +365,7 @@ fn draw_move_line(
         debug_ui_state.slow_down_factor,
         debug_ui_state.rotation_factor,
         debug_ui_state.min_sweep_distance,
+        debug_ui_state.speed_up_factor,
     );
 
     for trajectory in trajectories {
@@ -453,6 +455,7 @@ fn simulate_trajectories(
     slow_down_factor: f32,
     rotation_factor: f32,
     min_sweep_distance: f32,
+    speed_up_factor: f32,
 ) -> Vec<Vec<Vec2>> {
     const MIN_VELOCITY: f32 = 1.0; // Stop when velocity is very low
     const LINE_SEGMENT_SAMPLES: usize = 3;
@@ -514,6 +517,7 @@ fn simulate_trajectories(
                 slow_down_factor,
                 rotation_factor,
                 min_sweep_distance,
+                speed_up_factor,
             );
         }
     }
