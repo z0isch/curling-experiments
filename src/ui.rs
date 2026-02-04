@@ -285,7 +285,7 @@ fn stone_stopped_ui() -> impl Bundle {
         Visibility::Hidden,
         children![(
             BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.7)),
-            Text::new("Too bad! Press `R` to retry."),
+            Text::new("Too bad! Press R to retry."),
             TextFont {
                 font_size: 50.0,
                 ..default()
