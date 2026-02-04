@@ -373,6 +373,7 @@ fn draw_move_line(
                 Mesh2d(meshes.add(mesh)),
                 MeshMaterial2d(tile_assets.line_material.clone()),
                 Transform::from_xyz(0., 0., 2.0),
+                Pickable::IGNORE,
             ));
         }
     }
