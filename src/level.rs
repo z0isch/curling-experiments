@@ -6,9 +6,9 @@ use crate::{hex_grid::HexCoordinate, tile::TileType};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum CurrentLevel {
+    #[default]
     Level1,
     Level2,
-    #[default]
     Level3,
 }
 

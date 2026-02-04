@@ -29,6 +29,7 @@ use tile::{
     compute_tile_effects, toggle_tile_coordinates,
 };
 
+use crate::level::Level;
 use crate::{
     debug_ui::on_debug_ui_level_change,
     level::{CurrentLevel, get_initial_stone_velocity, get_level},
@@ -49,6 +50,12 @@ pub struct Countdown {
 
 #[derive(Resource, Default)]
 pub struct PhysicsPaused(pub bool);
+
+#[derive(Event)]
+pub struct LevelComplete;
+
+#[derive(Resource)]
+struct OnLevel(pub CurrentLevel);
 
 fn main() {
     App::new()
@@ -104,6 +111,7 @@ fn main() {
             Update,
             (restart_game_on_r_key_pressed, on_debug_ui_level_change).after(MainUpdateSystems),
         )
+        .add_observer(on_level_complete)
         .add_systems(Update, update_crt_time)
         .run();
 }
@@ -118,7 +126,9 @@ fn setup(
     mut scratch_materials: ResMut<Assets<ScratchOffMaterial>>,
 ) {
     commands.insert_resource(PhysicsPaused(true));
+
     let current_level = CurrentLevel::default();
+    commands.insert_resource(OnLevel(current_level));
     let level = get_level(current_level);
     let debug_ui_state = DebugUIState {
         hex_radius: 60.0,
@@ -169,6 +179,42 @@ fn setup(
     });
 }
 
+fn on_level_complete(
+    _event: On<LevelComplete>,
+    commands: Commands,
+    mut on_level: ResMut<OnLevel>,
+    grid: Single<Entity, With<HexGrid>>,
+    countdown_ui_query: Query<Entity, With<CountdownUI>>,
+    debug_ui_state: Res<DebugUIState>,
+    stone_query: Query<Entity, With<Stone>>,
+    paused: ResMut<PhysicsPaused>,
+    countdown: ResMut<Countdown>,
+    meshes: ResMut<Assets<Mesh>>,
+    materials: ResMut<Assets<ColorMaterial>>,
+    scratch_materials: ResMut<Assets<ScratchOffMaterial>>,
+) {
+    // TODO: get the next level after the current one in the iterator
+    if let Some(next_level) = CurrentLevel::iterator()
+        .skip_while(|&level| level != &on_level.0)
+        .nth(1)
+    {
+        on_level.0 = *next_level;
+        restart_game(
+            commands,
+            grid,
+            countdown_ui_query,
+            debug_ui_state,
+            stone_query,
+            paused,
+            countdown,
+            meshes,
+            materials,
+            scratch_materials,
+            Some(&get_level(*next_level)),
+        );
+    }
+}
+
 /// System that toggles physics pause when Space is pressed
 fn toggle_physics_pause(input: Res<ButtonInput<KeyCode>>, mut paused: ResMut<PhysicsPaused>) {
     if input.just_pressed(KeyCode::Space) {
@@ -191,7 +237,7 @@ pub fn switch_broom(
     }
 }
 
-pub fn restart_game_on_r_key_pressed(
+fn restart_game_on_r_key_pressed(
     input: Res<ButtonInput<KeyCode>>,
     commands: Commands,
     grid: Single<Entity, With<HexGrid>>,
@@ -203,6 +249,7 @@ pub fn restart_game_on_r_key_pressed(
     meshes: ResMut<Assets<Mesh>>,
     materials: ResMut<Assets<ColorMaterial>>,
     scratch_materials: ResMut<Assets<ScratchOffMaterial>>,
+    on_level: Res<OnLevel>,
 ) {
     if input.just_pressed(KeyCode::KeyR) {
         restart_game(
@@ -216,6 +263,7 @@ pub fn restart_game_on_r_key_pressed(
             meshes,
             materials,
             scratch_materials,
+            Some(&get_level(on_level.0)),
         );
     }
 }
@@ -231,13 +279,15 @@ pub fn restart_game(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
     mut scratch_materials: ResMut<Assets<ScratchOffMaterial>>,
+    level: Option<&Level>,
 ) {
     paused.0 = true;
-    let level = get_level(debug_ui_state.current_level);
+    let debug_level = get_level(debug_ui_state.current_level);
+    let level = level.unwrap_or(&debug_level);
 
     commands.entity(*grid).despawn();
 
-    let grid = HexGrid::new(debug_ui_state.hex_radius, &level);
+    let grid = HexGrid::new(debug_ui_state.hex_radius, level);
     let tile_assets = TileAssets::new(&mut meshes, &mut materials, &grid);
     spawn_hex_grid(&mut commands, &grid, &tile_assets, &mut scratch_materials);
     for stone_entity in stone_query {

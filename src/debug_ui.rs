@@ -136,5 +136,6 @@ pub fn on_debug_ui_level_change(
         meshes,
         materials,
         scratch_materials,
+        None,
     );
 }

@@ -1,8 +1,8 @@
 use bevy::prelude::*;
 
-use crate::DebugUIState;
 use crate::hex_grid::{HexCoordinate, HexGrid, hex_to_world};
 use crate::tile::{TileDragging, TileType, compute_tile_effects};
+use crate::{DebugUIState, LevelComplete};
 
 #[derive(Component, Clone, Debug)]
 pub struct Stone {
@@ -40,6 +40,7 @@ pub fn stone(
 }
 
 pub fn update_stone_position(
+    mut commands: Commands,
     mut stone: Query<(&mut Stone, &mut Velocity, &mut Transform), With<Stone>>,
     tiles: Query<(&TileType, &Transform), Without<Stone>>,
     time: Res<Time<Fixed>>,
@@ -74,6 +75,7 @@ pub fn update_stone_position(
                 transform.translation.y = goal_center.y;
                 velocity.0 = Vec2::ZERO;
                 stone.trail_accum = 0.0;
+                commands.trigger(LevelComplete);
             }
         }
     }
