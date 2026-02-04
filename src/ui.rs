@@ -360,6 +360,7 @@ fn stone_stopped_ui() -> impl Bundle {
         },
         Pickable::IGNORE,
         StoneStoppedUI,
+        MainUI,
         children![(
             BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.7)),
             Text::new("Too bad! Press R to retry."),
@@ -471,12 +472,9 @@ fn on_level_start(
 fn on_stone_stopped(
     mut _ev: On<StoneStopped>,
     mut commands: Commands,
-    main_ui_entity: Query<Entity, With<MainUI>>,
     stone_stopped_ui_entity: Query<Entity, With<StoneStoppedUI>>,
 ) {
-    for entity in main_ui_entity.iter() {
-        if stone_stopped_ui_entity.is_empty() {
-            commands.spawn((stone_stopped_ui(), ChildOf(entity)));
-        }
+    if stone_stopped_ui_entity.is_empty() {
+        commands.spawn(stone_stopped_ui());
     }
 }
