@@ -23,7 +23,8 @@ pub struct HexGrid {
 }
 
 impl HexGrid {
-    pub fn new(hex_radius: f32, level: &Level) -> Self {
+    pub fn new(level: &Level) -> Self {
+        let hex_radius = level.hex_radius;
         let cols = (
             level.grid.keys().map(|coord| coord.q).min().unwrap_or(0),
             level.grid.keys().map(|coord| coord.q).max().unwrap_or(0) + 1,

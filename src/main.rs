@@ -107,6 +107,7 @@ fn main() {
                 update_tile_material,
                 switch_broom,
                 drag_with_keyboard,
+                level_0_complete_check,
             )
                 .in_set(MainUpdateSystems),
         )
@@ -160,7 +161,7 @@ fn setup(
             .collect(),
     };
 
-    let grid = HexGrid::new(debug_ui_state.hex_radius, &level);
+    let grid = HexGrid::new(&level);
     let tile_assets = TileAssets::new(&mut meshes, &mut materials, &grid);
 
     spawn_hex_grid(&mut commands, &grid, &tile_assets, &mut scratch_materials);
@@ -278,30 +279,23 @@ pub fn restart_game(
 
     commands.entity(*grid).despawn();
 
-    let grid = HexGrid::new(debug_ui_state.hex_radius, level);
+    let grid = HexGrid::new(level);
     let tile_assets = TileAssets::new(&mut meshes, &mut materials, &grid);
     spawn_hex_grid(&mut commands, &grid, &tile_assets, &mut scratch_materials);
     for stone_entity in stone_query {
         commands.entity(stone_entity).despawn();
     }
-    for (i, stone_config) in level.stone_configs.iter().enumerate() {
-        // Use UI config values if available, otherwise fall back to level defaults
-        let (facing, velocity_magnitude) =
-            if let Some(ui_config) = debug_ui_state.stone_configs.get(i) {
-                (ui_config.facing.clone(), ui_config.velocity_magnitude)
-            } else {
-                (stone_config.facing.clone(), stone_config.velocity_magnitude)
-            };
+    for stone_config in level.stone_configs.iter() {
         commands.spawn(stone(
             &mut meshes,
             &mut materials,
             &grid,
             &stone_config.start_coordinate,
-            get_initial_stone_velocity(&facing, &velocity_magnitude),
+            get_initial_stone_velocity(&stone_config.facing, &stone_config.velocity_magnitude),
             debug_ui_state.stone_radius,
         ));
     }
-    commands.trigger(LevelStart(debug_ui_state.current_level));
+    commands.trigger(LevelStart(level.current_level));
 }
 
 fn draw_move_line(
@@ -551,5 +545,19 @@ fn drag_with_keyboard(
                 });
             }
         }
+    }
+}
+
+fn level_0_complete_check(
+    mut commands: Commands,
+    on_level: Res<OnLevel>,
+    tile_query: Query<&TileType>,
+) {
+    if (on_level.0.current_level == CurrentLevel::Level0)
+        && tile_query
+            .iter()
+            .all(|tile_type| *tile_type == TileType::MaintainSpeed)
+    {
+        commands.trigger(LevelComplete);
     }
 }
