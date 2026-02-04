@@ -124,7 +124,9 @@ fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
     mut scratch_materials: ResMut<Assets<ScratchOffMaterial>>,
+    mut mesh_picking_settings: ResMut<MeshPickingSettings>,
 ) {
+    mesh_picking_settings.require_markers = true;
     commands.insert_resource(PhysicsPaused(true));
 
     let current_level = CurrentLevel::default();
@@ -151,7 +153,7 @@ fn setup(
             .collect(),
     };
 
-    commands.spawn((Camera2d, CrtSettings::default()));
+    commands.spawn((Camera2d, CrtSettings::default(), MeshPickingCamera));
 
     let grid = HexGrid::new(debug_ui_state.hex_radius, &level);
     let tile_assets = TileAssets::new(&mut meshes, &mut materials, &grid);
@@ -375,7 +377,6 @@ fn draw_move_line(
                 Mesh2d(meshes.add(mesh)),
                 MeshMaterial2d(tile_assets.line_material.clone()),
                 Transform::from_xyz(0., 0., 2.0),
-                Pickable::IGNORE,
             ));
         }
     }

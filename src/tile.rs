@@ -76,6 +76,10 @@ pub fn tile(
                 Mesh2d(tile_assets.hex_mesh.clone()),
                 MeshMaterial2d(scratch_material),
                 Transform::from_xyz(0., 0., 1.0),
+                Pickable {
+                    should_block_lower: true,
+                    is_hoverable: true,
+                }
             ),
             (
                 TileCoordinateText,
