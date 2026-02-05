@@ -19,8 +19,8 @@ mod stone;
 mod tile;
 mod ui;
 
-use bevy::asset::AssetMetaCheck;
 use bevy::prelude::*;
+use bevy::{asset::AssetMetaCheck, window::WindowResolution};
 use bevy_egui::EguiPlugin;
 use bevy_rand::{
     plugin::EntropyPlugin,
@@ -48,12 +48,12 @@ impl Plugin for AppPlugin {
                     ..default()
                 })
                 .set(WindowPlugin {
-                    primary_window: Window {
-                        title: "Bevy Test".to_string(),
-                        fit_canvas_to_parent: true,
+                    primary_window: Some(Window {
+                        resolution: WindowResolution::new(1024, 768),
+                        resizable: false,
+                        title: "Hexagon Grid".into(),
                         ..default()
-                    }
-                    .into(),
+                    }),
                     ..default()
                 }),
         )
