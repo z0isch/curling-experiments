@@ -2,6 +2,7 @@ use bevy::prelude::*;
 
 use crate::{
     level::Level,
+    screens::Screen,
     tile::{
         ScratchOffMaterial, TileAssets, on_pointer_out, on_pointer_over, on_tile_drag_enter,
         on_tile_dragging, tile,
@@ -92,13 +93,16 @@ pub fn spawn_hex_grid(
             let world_pos = hex_to_world(&HexCoordinate { q, r }, grid);
             if let Some(tile_type) = grid.level.grid.get(&HexCoordinate { q, r }) {
                 let tile_id = commands
-                    .spawn(tile(
-                        tile_type.clone(),
-                        world_pos,
-                        q,
-                        r,
-                        tile_assets,
-                        scratch_materials,
+                    .spawn((
+                        DespawnOnExit(Screen::Gameplay),
+                        tile(
+                            tile_type.clone(),
+                            world_pos,
+                            q,
+                            r,
+                            tile_assets,
+                            scratch_materials,
+                        ),
                     ))
                     .observe(on_pointer_over)
                     .observe(on_pointer_out)
@@ -112,6 +116,7 @@ pub fn spawn_hex_grid(
 
     commands
         .spawn((
+            DespawnOnExit(Screen::Gameplay),
             Visibility::Visible,
             Transform::from_xyz(0., 0., 0.),
             grid.clone(),

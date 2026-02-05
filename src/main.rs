@@ -1,579 +1,107 @@
+// Support configuring Bevy lints within code.
+#![cfg_attr(bevy_lint, feature(register_tool), register_tool(bevy))]
+// Disable console on Windows for non-dev builds.
+#![cfg_attr(not(feature = "dev"), windows_subsystem = "windows")]
+
+mod asset_tracking;
 mod crt_postprocess;
 mod debug_ui;
+#[cfg(feature = "dev")]
+mod dev_tools;
 mod fire_trail;
+mod gameplay;
 mod hex_grid;
 mod intersection;
 mod level;
+mod menus;
+mod screens;
 mod stone;
 mod tile;
 mod ui;
 
-use bevy::mesh::{Indices, PrimitiveTopology};
+use bevy::asset::AssetMetaCheck;
 use bevy::prelude::*;
-use bevy::sprite_render::Material2dPlugin;
-use bevy::window::WindowResolution;
-use bevy_egui::{EguiPlugin, EguiPrimaryContextPass};
+use bevy_egui::EguiPlugin;
 use bevy_rand::{
     plugin::EntropyPlugin,
     prelude::{ChaCha8Rng, WyRand},
 };
+use bevy_seedling::SeedlingPlugin;
 use crt_postprocess::{CrtPostProcessPlugin, CrtSettings, update_crt_time};
-use debug_ui::{DebugUIState, StoneUIConfig, debug_ui};
-use fire_trail::{spawn_fire_trail, update_fire_trail};
-use hex_grid::{HexGrid, spawn_hex_grid};
-use stone::{
-    Stone, Velocity, apply_tile_velocity_effects, resolve_collision, stone, update_stone_position,
-};
-use tile::{
-    CurrentDragTileType, ScratchOffMaterial, TileAssets, TileDragging, TileType,
-    compute_tile_effects, toggle_tile_coordinates,
-};
 
-use crate::level::Level;
-use crate::ui::spawn_title_screen_ui;
-use crate::{
-    debug_ui::on_debug_ui_level_change,
-    level::{CurrentLevel, get_initial_stone_velocity, get_level},
-    stone::apply_stone_collision,
-    tile::{MouseHover, update_tile_material, update_tile_type},
-};
+fn main() -> AppExit {
+    App::new().add_plugins(AppPlugin).run()
+}
 
-#[derive(Component)]
-struct StoneMoveLine;
+pub struct AppPlugin;
 
-#[derive(Resource, Default)]
-pub struct PhysicsPaused(pub bool);
-
-#[derive(Event)]
-pub struct LevelComplete;
-
-#[derive(Event)]
-pub struct StoneStopped;
-
-#[derive(Event)]
-pub struct GameStart;
-
-#[derive(Event)]
-pub struct LevelStart(pub CurrentLevel);
-
-#[derive(Resource)]
-struct OnLevel(pub Level);
-
-fn main() {
-    App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                resolution: WindowResolution::new(1024, 768),
-                resizable: false,
-                title: "Hexagon Grid".into(),
-                ..default()
-            }),
-            ..default()
-        }))
+impl Plugin for AppPlugin {
+    fn build(&self, app: &mut App) {
+        // Add Bevy plugins.
+        app.add_plugins(
+            DefaultPlugins
+                .set(AssetPlugin {
+                    // Wasm builds will check for meta files (that don't exist) if this isn't set.
+                    // This causes errors and even panics on web build on itch.
+                    // See https://github.com/bevyengine/bevy_github_ci_template/issues/48.
+                    meta_check: AssetMetaCheck::Never,
+                    ..default()
+                })
+                .set(WindowPlugin {
+                    primary_window: Window {
+                        title: "Bevy Test".to_string(),
+                        fit_canvas_to_parent: true,
+                        ..default()
+                    }
+                    .into(),
+                    ..default()
+                }),
+        )
+        .add_plugins(SeedlingPlugin::default())
         .add_plugins(EguiPlugin::default())
         .add_plugins(MeshPickingPlugin)
-        .add_plugins(Material2dPlugin::<ScratchOffMaterial>::default())
         .add_plugins((
             EntropyPlugin::<ChaCha8Rng>::default(),
             EntropyPlugin::<WyRand>::default(),
         ))
-        .add_plugins(CrtPostProcessPlugin)
-        .add_plugins(ui::plugin)
-        .add_systems(EguiPrimaryContextPass, debug_ui)
-        .add_systems(Startup, setup)
-        .add_systems(
-            FixedUpdate,
-            (
-                apply_stone_collision,
-                update_stone_position,
-                apply_tile_velocity_effects,
-            )
-                .chain()
-                .run_if(|paused: Res<PhysicsPaused>| !paused.0),
-        )
-        .add_systems(
-            Update,
-            (spawn_fire_trail, update_fire_trail).run_if(|paused: Res<PhysicsPaused>| !paused.0),
-        )
-        .add_systems(
-            Update,
-            (
-                draw_move_line,
-                update_tile_type,
-                toggle_physics_pause,
-                toggle_tile_coordinates,
-                update_tile_material,
-                switch_broom,
-                drag_with_keyboard,
-                level_0_complete_check,
-            )
-                .in_set(MainUpdateSystems),
-        )
-        .add_systems(
-            Update,
-            (restart_game_on_r_key_pressed, on_debug_ui_level_change).after(MainUpdateSystems),
-        )
-        .add_observer(on_level_complete)
-        .add_observer(on_game_start)
-        .add_systems(Update, update_crt_time)
-        .run();
+        .add_plugins(CrtPostProcessPlugin);
+
+        // Add other plugins.
+        app.add_plugins((
+            asset_tracking::plugin,
+            #[cfg(feature = "dev")]
+            dev_tools::plugin,
+            menus::plugin,
+            screens::plugin,
+            gameplay::plugin,
+        ));
+
+        // Set up the `Pause` state.
+        app.init_state::<Pause>();
+        app.configure_sets(FixedUpdate, PausableSystems.run_if(in_state(Pause(false))));
+        app.configure_sets(Update, PausableSystems.run_if(in_state(Pause(false))));
+
+        // Spawn the main camera.
+        app.add_systems(Startup, spawn_camera);
+
+        app.add_systems(Update, update_crt_time);
+    }
 }
 
-#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
-pub struct MainUpdateSystems;
+/// Whether or not the game is paused.
+#[derive(States, Copy, Clone, Eq, PartialEq, Hash, Debug, Default)]
+struct Pause(pub bool);
 
-fn setup(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
-    mut mesh_picking_settings: ResMut<MeshPickingSettings>,
-) {
-    commands.spawn((Camera2d, CrtSettings::default(), MeshPickingCamera));
+/// A system set for systems that shouldn't run while the game is paused.
+#[derive(SystemSet, Copy, Clone, Eq, PartialEq, Hash, Debug)]
+struct PausableSystems;
 
+fn spawn_camera(mut commands: Commands, mut mesh_picking_settings: ResMut<MeshPickingSettings>) {
+    commands.spawn((
+        Name::new("Camera"),
+        Camera2d,
+        CrtSettings::default(),
+        MeshPickingCamera,
+    ));
     mesh_picking_settings.require_markers = true;
-
-    commands.insert_resource(PhysicsPaused(true));
-    let current_level = CurrentLevel::default();
-    let level = get_level(current_level);
-    commands.insert_resource(OnLevel(level.clone()));
-
-    let debug_ui_state = DebugUIState {
-        hex_radius: 60.0,
-        stone_radius: 15.0,
-        min_sweep_distance: 250.0,
-        drag_coefficient: 0.0036,
-        slow_down_factor: 5.0,
-        rotation_factor: 0.025,
-        snap_distance: 40.0,
-        snap_velocity: 40.0,
-        current_level,
-        speed_up_factor: 250.0,
-        stone_configs: level
-            .stone_configs
-            .iter()
-            .map(|sc| StoneUIConfig {
-                velocity_magnitude: sc.velocity_magnitude,
-                facing: sc.facing.clone(),
-            })
-            .collect(),
-    };
-
-    let grid = HexGrid::new(&level);
-    let tile_assets = TileAssets::new(&mut meshes, &mut materials, &grid);
-    commands.insert_resource(tile_assets);
-    commands.insert_resource(debug_ui_state);
-    commands.insert_resource(CurrentDragTileType(TileType::MaintainSpeed));
-    spawn_title_screen_ui(commands);
-}
-
-fn on_level_complete(
-    _event: On<LevelComplete>,
-    commands: Commands,
-    mut on_level: ResMut<OnLevel>,
-    grid: Single<Entity, With<HexGrid>>,
-    debug_ui_state: Res<DebugUIState>,
-    stone_query: Query<Entity, With<Stone>>,
-    paused: ResMut<PhysicsPaused>,
-    meshes: ResMut<Assets<Mesh>>,
-    materials: ResMut<Assets<ColorMaterial>>,
-    scratch_materials: ResMut<Assets<ScratchOffMaterial>>,
-    current_drag_tile_type: ResMut<CurrentDragTileType>,
-) {
-    // TODO: get the next level after the current one in the iterator
-    if let Some(next_level) = CurrentLevel::iterator()
-        .skip_while(|&level| level != &on_level.0.current_level)
-        .nth(1)
-    {
-        on_level.0 = get_level(*next_level).clone();
-
-        restart_game(
-            commands,
-            grid,
-            debug_ui_state,
-            stone_query,
-            paused,
-            meshes,
-            materials,
-            scratch_materials,
-            current_drag_tile_type,
-            Some(&get_level(*next_level)),
-        );
-    }
-}
-
-/// System that toggles physics pause when Space is pressed
-fn toggle_physics_pause(input: Res<ButtonInput<KeyCode>>, mut paused: ResMut<PhysicsPaused>) {
-    if input.just_pressed(KeyCode::Space) {
-        paused.0 = !paused.0;
-    }
-}
-
-pub fn switch_broom(
-    input: Res<ButtonInput<KeyCode>>,
-    mut current_drag_tile_type: ResMut<CurrentDragTileType>,
-) {
-    if input.just_pressed(KeyCode::Digit1) {
-        *current_drag_tile_type = CurrentDragTileType(TileType::MaintainSpeed);
-    }
-    if input.just_pressed(KeyCode::Digit2) {
-        *current_drag_tile_type = CurrentDragTileType(TileType::TurnCounterclockwise);
-    }
-    if input.just_pressed(KeyCode::Digit3) {
-        *current_drag_tile_type = CurrentDragTileType(TileType::TurnClockwise);
-    }
-}
-
-fn restart_game_on_r_key_pressed(
-    input: Res<ButtonInput<KeyCode>>,
-    commands: Commands,
-    grid: Single<Entity, With<HexGrid>>,
-    debug_ui_state: Res<DebugUIState>,
-    stone_query: Query<Entity, With<Stone>>,
-    paused: ResMut<PhysicsPaused>,
-    meshes: ResMut<Assets<Mesh>>,
-    materials: ResMut<Assets<ColorMaterial>>,
-    scratch_materials: ResMut<Assets<ScratchOffMaterial>>,
-    current_drag_tile_type: ResMut<CurrentDragTileType>,
-    on_level: Res<OnLevel>,
-) {
-    if input.just_pressed(KeyCode::KeyR) {
-        restart_game(
-            commands,
-            grid,
-            debug_ui_state,
-            stone_query,
-            paused,
-            meshes,
-            materials,
-            scratch_materials,
-            current_drag_tile_type,
-            Some(&on_level.0),
-        );
-    }
-}
-pub fn restart_game(
-    mut commands: Commands,
-    grid: Single<Entity, With<HexGrid>>,
-    debug_ui_state: Res<DebugUIState>,
-    stone_query: Query<Entity, With<Stone>>,
-    mut paused: ResMut<PhysicsPaused>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
-    mut scratch_materials: ResMut<Assets<ScratchOffMaterial>>,
-    mut current_drag_tile_type: ResMut<CurrentDragTileType>,
-    level: Option<&Level>,
-) {
-    *current_drag_tile_type = CurrentDragTileType(TileType::MaintainSpeed);
-    paused.0 = true;
-    let debug_level = get_level(debug_ui_state.current_level);
-    let level = level.unwrap_or(&debug_level);
-
-    commands.entity(*grid).despawn();
-
-    let grid = HexGrid::new(level);
-    let tile_assets = TileAssets::new(&mut meshes, &mut materials, &grid);
-    spawn_hex_grid(&mut commands, &grid, &tile_assets, &mut scratch_materials);
-    for stone_entity in stone_query {
-        commands.entity(stone_entity).despawn();
-    }
-    for stone_config in level.stone_configs.iter() {
-        commands.spawn(stone(
-            &mut meshes,
-            &mut materials,
-            &grid,
-            &stone_config.start_coordinate,
-            get_initial_stone_velocity(&stone_config.facing, &stone_config.velocity_magnitude),
-            debug_ui_state.stone_radius,
-        ));
-    }
-    commands.trigger(LevelStart(level.current_level));
-}
-
-fn draw_move_line(
-    mut commands: Commands,
-    mut meshes: ResMut<Assets<Mesh>>,
-    tile_assets: Res<TileAssets>,
-    grid: Single<&HexGrid>,
-    debug_ui_state: Res<DebugUIState>,
-    stones: Query<(&Stone, &Velocity, &Transform)>,
-    tiles: Query<(&TileType, &Transform, Option<&TileDragging>), Without<Stone>>,
-    lines: Query<Entity, With<StoneMoveLine>>,
-    fixed_time: Res<Time<Fixed>>,
-) {
-    for l in &lines {
-        commands.entity(l).despawn();
-    }
-
-    // Collect tile data for trajectory simulation (including dragging state)
-    let tile_data: Vec<_> = tiles
-        .iter()
-        .map(|(tile_type, transform, tile_dragging)| {
-            let position = transform.translation.truncate();
-            (tile_type, position, tile_dragging)
-        })
-        .collect();
-
-    // Collect all stone data for multi-stone simulation
-    let stone_data: Vec<_> = stones
-        .iter()
-        .map(|(stone, velocity, transform)| {
-            (
-                transform.translation.truncate(),
-                velocity.clone(),
-                stone.radius,
-            )
-        })
-        .collect();
-
-    // Simulate physics forward to predict trajectory for all stones together
-    let trajectories = simulate_trajectories(
-        &stone_data,
-        &tile_data,
-        *grid,
-        debug_ui_state.drag_coefficient,
-        fixed_time.delta_secs(),
-        debug_ui_state.slow_down_factor,
-        debug_ui_state.rotation_factor,
-        debug_ui_state.min_sweep_distance,
-        debug_ui_state.speed_up_factor,
-    );
-
-    for trajectory in trajectories {
-        if let Some(mesh) = create_tapered_line_mesh(&trajectory, 6.0, 1.0) {
-            commands.spawn((
-                StoneMoveLine,
-                Mesh2d(meshes.add(mesh)),
-                MeshMaterial2d(tile_assets.line_material.clone()),
-                Transform::from_xyz(0., 0., 2.0),
-            ));
-        }
-    }
-}
-
-/// Creates a tapered line mesh that starts thick and thins out along the trajectory.
-fn create_tapered_line_mesh(points: &[Vec2], start_width: f32, end_width: f32) -> Option<Mesh> {
-    if points.len() < 2 {
-        return None;
-    }
-
-    let mut positions: Vec<[f32; 3]> = Vec::with_capacity(points.len() * 2);
-    let mut indices: Vec<u32> = Vec::with_capacity((points.len() - 1) * 6);
-
-    let total_points = points.len();
-
-    for (i, point) in points.iter().enumerate() {
-        // Calculate the direction at this point
-        let direction = if i == 0 {
-            (points[1] - points[0]).normalize_or_zero()
-        } else if i == total_points - 1 {
-            (points[i] - points[i - 1]).normalize_or_zero()
-        } else {
-            // Average direction from neighbors for smoother curves
-            ((points[i] - points[i - 1]).normalize_or_zero()
-                + (points[i + 1] - points[i]).normalize_or_zero())
-            .normalize_or_zero()
-        };
-
-        // Perpendicular direction (rotate 90 degrees)
-        let perpendicular = Vec2::new(-direction.y, direction.x);
-
-        // Interpolate width from start to end (using sqrt for faster tapering)
-        let t = (i as f32 / (total_points - 1) as f32).sqrt();
-        let half_width = (start_width * (1.0 - t) + end_width * t) / 2.0;
-
-        // Create two vertices on either side of the line
-        let left = *point + perpendicular * half_width;
-        let right = *point - perpendicular * half_width;
-
-        positions.push([left.x, left.y, 0.0]);
-        positions.push([right.x, right.y, 0.0]);
-
-        // Create triangles connecting to previous segment
-        if i > 0 {
-            let base = (i as u32 - 1) * 2;
-            // Two triangles forming a quad
-            indices.push(base); // prev left
-            indices.push(base + 1); // prev right
-            indices.push(base + 2); // curr left
-
-            indices.push(base + 1); // prev right
-            indices.push(base + 3); // curr right
-            indices.push(base + 2); // curr left
-        }
-    }
-
-    let mut mesh = Mesh::new(PrimitiveTopology::TriangleList, default());
-    mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, positions);
-    mesh.insert_indices(Indices::U32(indices));
-
-    Some(mesh)
-}
-
-/// Simulates all stones' trajectories by forward-integrating physics.
-///
-/// **Important**: The order of operations must match the FixedUpdate system chain:
-/// 1. apply_stone_collision (handle collisions)
-/// 2. update_stone_position (move)
-/// 3. apply_tile_velocity_effects (update velocity)
-fn simulate_trajectories(
-    stone_data: &[(Vec2, Velocity, f32)], // (position, velocity, radius)
-    tile_data: &[(&TileType, Vec2, Option<&TileDragging>)],
-    hex_grid: &HexGrid,
-    drag_coefficient: f32,
-    fixed_dt: f32,
-    slow_down_factor: f32,
-    rotation_factor: f32,
-    min_sweep_distance: f32,
-    speed_up_factor: f32,
-) -> Vec<Vec<Vec2>> {
-    const MIN_VELOCITY: f32 = 1.0; // Stop when velocity is very low
-    const LINE_SEGMENT_SAMPLES: usize = 3;
-
-    // Initialize simulation state for each stone
-    let mut stones: Vec<_> = stone_data
-        .iter()
-        .map(|(pos, vel, radius)| (*pos, vel.clone(), *radius))
-        .collect();
-
-    let mut trajectories: Vec<Vec<Vec2>> = stones.iter().map(|(pos, _, _)| vec![*pos]).collect();
-
-    let steps = 10000;
-    for i in 0..steps {
-        // Check if all stones have stopped
-        let all_stopped = stones
-            .iter()
-            .all(|(_, vel, _)| vel.0.length_squared() < MIN_VELOCITY * MIN_VELOCITY);
-        if all_stopped {
-            break;
-        }
-
-        // Step 1: Apply stone collisions (matches apply_stone_collision)
-        for j in 0..stones.len() {
-            for k in (j + 1)..stones.len() {
-                let (pos1, vel1, radius1) = &stones[j];
-                let (pos2, vel2, radius2) = &stones[k];
-
-                if let Some((new_vel1, new_vel2)) =
-                    resolve_collision(*pos1, vel1, *radius1, *pos2, vel2, *radius2)
-                {
-                    stones[j].1 = new_vel1;
-                    stones[k].1 = new_vel2;
-                }
-            }
-        }
-
-        // Step 2: Move positions (matches update_stone_position)
-        for (pos, vel, _) in &mut stones {
-            *pos += vel.0 * fixed_dt;
-        }
-
-        // Record trajectory points
-        if i % LINE_SEGMENT_SAMPLES == 0 {
-            for (idx, (pos, _, _)) in stones.iter().enumerate() {
-                trajectories[idx].push(*pos);
-            }
-        }
-
-        // Step 3: Update velocities based on new positions (matches apply_tile_velocity_effects)
-        for (pos, vel, radius) in &mut stones {
-            *vel = compute_tile_effects(
-                *pos,
-                vel,
-                tile_data,
-                hex_grid,
-                drag_coefficient,
-                *radius,
-                slow_down_factor,
-                rotation_factor,
-                min_sweep_distance,
-                speed_up_factor,
-            );
-        }
-    }
-
-    // Always include the final positions
-    for (idx, (pos, _, _)) in stones.iter().enumerate() {
-        if trajectories[idx].last() != Some(pos) {
-            trajectories[idx].push(*pos);
-        }
-    }
-
-    trajectories
-}
-
-fn drag_with_keyboard(
-    mut commands: Commands,
-    input: Res<ButtonInput<KeyCode>>,
-    current_drag_tile_type: Res<CurrentDragTileType>,
-    tile_query: Single<(Entity, Option<&mut TileDragging>), With<MouseHover>>,
-) {
-    if let Some(just_pressed) = input.get_just_pressed().next() {
-        //Ignore brush changes
-        if *just_pressed == KeyCode::Digit1
-            || *just_pressed == KeyCode::Digit2
-            || *just_pressed == KeyCode::Digit3
-        {
-            return;
-        }
-        let (entity, tile_dragging_opt) = tile_query.into_inner();
-
-        match tile_dragging_opt {
-            Some(mut tile_dragging) => {
-                if let Some(last_key_pressed) =
-                    tile_dragging.last_keyboard_input.replace(*just_pressed)
-                    && last_key_pressed != *just_pressed
-                {
-                    tile_dragging.distance_dragged += 50.;
-                }
-            }
-            None => {
-                // Insert new TileDragging component
-                commands.entity(entity).insert(TileDragging {
-                    last_position: None,
-                    distance_dragged: 0.0,
-                    tile_type: current_drag_tile_type.0.clone(),
-                    last_keyboard_input: Some(*just_pressed),
-                });
-            }
-        }
-    }
-}
-
-fn level_0_complete_check(
-    mut commands: Commands,
-    on_level: Res<OnLevel>,
-    tile_query: Query<&TileType>,
-) {
-    if (on_level.0.current_level == CurrentLevel::Level0)
-        && tile_query
-            .iter()
-            .all(|tile_type| *tile_type == TileType::MaintainSpeed)
-    {
-        commands.trigger(LevelComplete);
-    }
-}
-
-fn on_game_start(
-    _event: On<GameStart>,
-    mut commands: Commands,
-    debug_ui_state: Res<DebugUIState>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
-    mut scratch_materials: ResMut<Assets<ScratchOffMaterial>>,
-    on_level: Res<OnLevel>,
-    tile_assets: Res<TileAssets>,
-) {
-    let grid = HexGrid::new(&on_level.0);
-    spawn_hex_grid(&mut commands, &grid, &tile_assets, &mut scratch_materials);
-    for stone_config in &on_level.0.stone_configs {
-        commands.spawn(stone(
-            &mut meshes,
-            &mut materials,
-            &grid,
-            &stone_config.start_coordinate,
-            get_initial_stone_velocity(&stone_config.facing, &stone_config.velocity_magnitude),
-            debug_ui_state.stone_radius,
-        ));
-    }
-    commands.trigger(LevelStart(on_level.0.current_level));
 }

@@ -1,6 +1,10 @@
 use bevy::prelude::*;
 
-use crate::stone::{Stone, Velocity};
+use crate::{
+    gameplay::GameState,
+    screens::Screen,
+    stone::{Stone, Velocity},
+};
 
 const EMBER_SEED: u32 = 12345;
 
@@ -74,6 +78,8 @@ pub fn spawn_fire_trail(
         let glow_color = Color::srgba(1.0, 0.20 + 0.55 * t, 0.05, glow_alpha);
 
         commands.spawn((
+            DespawnOnExit(Screen::Gameplay),
+            DespawnOnExit(GameState::Playing),
             TrailDot {
                 ttl: glow_ttl,
                 ttl0: glow_ttl,
@@ -97,6 +103,8 @@ pub fn spawn_fire_trail(
             let core_color = Color::srgba(1.0, 0.95, 0.65, core_alpha);
 
             commands.spawn((
+                DespawnOnExit(Screen::Gameplay),
+                DespawnOnExit(GameState::Playing),
                 TrailDot {
                     ttl: core_ttl,
                     ttl0: core_ttl,
@@ -123,6 +131,8 @@ pub fn spawn_fire_trail(
             let sy = (rand01() - 0.5) * (stone.radius * 1.2);
 
             commands.spawn((
+                DespawnOnExit(Screen::Gameplay),
+                DespawnOnExit(GameState::Playing),
                 TrailDot {
                     ttl: ember_ttl,
                     ttl0: ember_ttl,

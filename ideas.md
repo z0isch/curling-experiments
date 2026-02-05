@@ -6,4 +6,6 @@
 
 - Time fastforwarding
 
- 
+- Fix falling off map
+
+- Check if you will make it into the goal before triggering StoneStopped

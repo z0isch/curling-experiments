@@ -1,8 +1,10 @@
 use bevy::prelude::*;
 
 use crate::{
-    GameStart, LevelStart, OnLevel, PhysicsPaused, StoneStopped,
+    PausableSystems,
+    gameplay::{GameState, OnLevel, StoneStopped},
     level::CurrentLevel,
+    screens::Screen,
     tile::{CurrentDragTileType, TileType},
 };
 
@@ -39,14 +41,16 @@ pub struct BottomLeftUI;
 #[derive(Component)]
 pub struct MainUI;
 
-#[derive(Component)]
-pub struct TitleScreenUI;
-
 pub(super) fn plugin(app: &mut App) {
     app.add_systems(Startup, setup)
-        .add_systems(Update, (update_broom_type_ui, update_countdown))
-        .add_observer(on_level_start)
+        .add_systems(
+            Update,
+            (update_broom_type_ui, update_countdown)
+                .run_if(in_state(Screen::Gameplay))
+                .in_set(PausableSystems),
+        )
         .add_observer(on_stone_stopped);
+    app.add_systems(OnEnter(GameState::Countdown), on_level_start);
 }
 
 fn setup(mut commands: Commands) {
@@ -54,66 +58,6 @@ fn setup(mut commands: Commands) {
         timer: Timer::from_seconds(1.0, TimerMode::Repeating),
         count: 0,
     });
-}
-
-pub fn spawn_title_screen_ui(mut commands: Commands) {
-    commands
-        .spawn((
-            TitleScreenUI,
-            Node {
-                width: Val::Percent(100.0),
-                height: Val::Percent(100.0),
-                justify_content: JustifyContent::Center,
-                align_items: AlignItems::Center,
-                flex_direction: FlexDirection::Column,
-                row_gap: Val::Px(50.0),
-                ..default()
-            },
-            Visibility::default(),
-        ))
-        .with_children(|parent| {
-            parent.spawn((
-                Text::new("CURLING"),
-                TextFont {
-                    font_size: 100.0,
-                    ..default()
-                },
-                TextColor(Color::WHITE),
-                BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.7)),
-            ));
-
-            parent
-                .spawn((
-                    BorderColor::all(Color::BLACK),
-                    BackgroundColor(Color::WHITE),
-                    Node {
-                        width: px(150.0),
-                        height: px(65.0),
-                        border: UiRect::all(px(5.0)),
-                        justify_content: JustifyContent::Center,
-                        align_items: AlignItems::Center,
-                        ..default()
-                    },
-                    Visibility::default(),
-                ))
-                .with_children(|p2| {
-                    p2.spawn((
-                        Text::new("Play"),
-                        TextColor(Color::BLACK),
-                        TextFont::default().with_font_size(40.0),
-                    ));
-                })
-                .observe(
-                    |_ev: On<Pointer<Click>>,
-                     mut commands: Commands,
-                     title_screen_query: Query<Entity, With<TitleScreenUI>>| {
-                        commands.trigger(GameStart);
-                        for e in title_screen_query.iter() {
-                            commands.entity(e).despawn();
-                        }
-                    },
-                );
-        });
 }
 
 fn countdown_ui(time_left: u32) -> impl Bundle {
@@ -146,6 +90,7 @@ fn countdown_ui(time_left: u32) -> impl Bundle {
 fn spawn_bottom_left_ui(mut commands: Commands, current_level: &CurrentLevel) {
     commands
         .spawn((
+            DespawnOnExit(Screen::Gameplay),
             Node {
                 position_type: PositionType::Absolute,
                 left: Val::Px(16.0),
@@ -408,12 +353,12 @@ fn update_countdown(
     mut commands: Commands,
     time: Res<Time>,
     mut countdown: ResMut<Countdown>,
-    mut paused: ResMut<PhysicsPaused>,
     mut text_query: Query<&mut Text, With<CountdownText>>,
     countdown_ui_query: Single<Entity, With<CountdownUI>>,
+    mut next_game_state: ResMut<NextState<GameState>>,
 ) {
     // Only run countdown while physics is paused and countdown is active
-    if !paused.0 || countdown.count == 0 {
+    if countdown.count == 0 {
         return;
     }
 
@@ -424,7 +369,7 @@ fn update_countdown(
 
         if countdown.count == 0 {
             commands.entity(*countdown_ui_query).despawn();
-            paused.0 = false;
+            next_game_state.set(GameState::Playing);
         } else {
             // Update the countdown text
             for mut text in &mut text_query {
@@ -437,7 +382,6 @@ fn update_countdown(
 // Observers
 
 fn on_level_start(
-    mut _ev: On<LevelStart>,
     mut commands: Commands,
     mut countdown: ResMut<Countdown>,
     on_level: Res<OnLevel>,
@@ -456,14 +400,17 @@ fn on_level_start(
     let level = &on_level.0;
     match level.current_level {
         CurrentLevel::Level0 => {
-            commands.spawn(level_0_ui());
+            commands.spawn((DespawnOnExit(Screen::Gameplay), level_0_ui()));
         }
         _ => {
-            commands.spawn(broom_type_ui(&current_drag_tile_type.0));
+            commands.spawn((
+                DespawnOnExit(Screen::Gameplay),
+                broom_type_ui(&current_drag_tile_type.0),
+            ));
             if let Some(c) = level.countdown {
                 countdown.count = c;
                 countdown.timer.reset();
-                commands.spawn(countdown_ui(c));
+                commands.spawn((DespawnOnExit(Screen::Gameplay), countdown_ui(c)));
             }
             spawn_bottom_left_ui(commands, &level.current_level);
         }

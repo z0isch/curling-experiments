@@ -4,9 +4,10 @@ use bevy::render::render_resource::AsBindGroup;
 use bevy::shader::ShaderRef;
 use bevy::sprite_render::Material2d;
 
+use crate::debug_ui::DebugUIState;
 use crate::hex_grid::HexGrid;
+use crate::intersection;
 use crate::level::Facing;
-use crate::{DebugUIState, intersection};
 
 // ============================================================================
 // Custom Scratch-Off Material
@@ -142,7 +143,6 @@ pub struct TileDragging {
     pub last_position: Option<Vec2>,
     pub distance_dragged: f32,
     pub tile_type: TileType,
-    pub last_keyboard_input: Option<KeyCode>,
 }
 
 #[derive(Component)]
@@ -326,7 +326,6 @@ pub fn on_tile_drag_enter(
             last_position: Some(drag_enter.pointer_location.position),
             distance_dragged: 0.0,
             tile_type: current_drag_tile_type.0.clone(),
-            last_keyboard_input: None,
         });
     }
 }

@@ -1,8 +1,9 @@
 use bevy::prelude::*;
 
+use crate::debug_ui::DebugUIState;
+use crate::gameplay::{LevelComplete, StoneStopped};
 use crate::hex_grid::{HexCoordinate, HexGrid, hex_to_world};
 use crate::tile::{TileDragging, TileType, compute_tile_effects};
-use crate::{DebugUIState, LevelComplete, StoneStopped};
 
 #[derive(Component, Clone, Debug)]
 pub struct Stone {

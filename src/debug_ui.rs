@@ -2,10 +2,9 @@ use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 
 use crate::{
-    PhysicsPaused,
+    gameplay::restart_game,
     hex_grid::HexGrid,
     level::{CurrentLevel, Facing},
-    restart_game,
     stone::Stone,
     tile::{CurrentDragTileType, ScratchOffMaterial},
 };
@@ -117,9 +116,8 @@ pub fn on_debug_ui_level_change(
     mut maybe_old_level: Local<Option<CurrentLevel>>,
     debug_ui_state: Res<DebugUIState>,
     commands: Commands,
-    grid: Single<Entity, With<HexGrid>>,
+    grid: Query<Entity, With<HexGrid>>,
     stone_query: Query<Entity, With<Stone>>,
-    paused: ResMut<PhysicsPaused>,
     meshes: ResMut<Assets<Mesh>>,
     materials: ResMut<Assets<ColorMaterial>>,
     scratch_materials: ResMut<Assets<ScratchOffMaterial>>,
@@ -134,7 +132,6 @@ pub fn on_debug_ui_level_change(
         grid,
         debug_ui_state,
         stone_query,
-        paused,
         meshes,
         materials,
         scratch_materials,
