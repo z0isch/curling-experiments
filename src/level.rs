@@ -13,17 +13,19 @@ pub enum CurrentLevel {
     Level3,
     Level4,
     Level5,
+    Level6,
 }
 
 impl CurrentLevel {
     pub fn iterator() -> Iter<'static, CurrentLevel> {
-        static LEVELS: [CurrentLevel; 6] = [
+        static LEVELS: [CurrentLevel; 7] = [
             CurrentLevel::Level0,
             CurrentLevel::Level1,
             CurrentLevel::Level2,
             CurrentLevel::Level3,
             CurrentLevel::Level4,
             CurrentLevel::Level5,
+            CurrentLevel::Level6,
         ];
         LEVELS.iter()
     }
@@ -38,6 +40,7 @@ impl Display for CurrentLevel {
             CurrentLevel::Level3 => write!(f, "Level 3"),
             CurrentLevel::Level4 => write!(f, "Level 4"),
             CurrentLevel::Level5 => write!(f, "Level 5"),
+            CurrentLevel::Level6 => write!(f, "Level 6"),
         }
     }
 }
@@ -117,6 +120,7 @@ pub fn get_level(current_level: CurrentLevel) -> Level {
         CurrentLevel::Level3 => get_level3(),
         CurrentLevel::Level4 => get_level4(),
         CurrentLevel::Level5 => get_level5(),
+        CurrentLevel::Level6 => get_level6(),
     }
 }
 
@@ -403,6 +407,80 @@ fn get_level5() -> Level {
     Level {
         hex_radius: 60.0,
         current_level: CurrentLevel::Level5,
+        grid,
+        goal_coordinate,
+        stone_configs: vec![StoneConfig {
+            start_coordinate,
+            velocity_magnitude: 200.0,
+            facing: Facing::DownRight,
+        }],
+        countdown: Some(3),
+    }
+}
+
+fn get_level6() -> Level {
+    let goal_coordinate = HexCoordinate { q: 3, r: 1 };
+    let start_coordinate = HexCoordinate { q: 1, r: 2 };
+
+    let grid = HashMap::from([
+        (HexCoordinate { q: 0, r: 1 }, TileType::Wall),
+        (HexCoordinate { q: 0, r: 2 }, TileType::Wall),
+        (HexCoordinate { q: 0, r: 3 }, TileType::Wall),
+        //
+        //
+        (HexCoordinate { q: 7, r: 4 }, TileType::Wall),
+        (HexCoordinate { q: 7, r: 3 }, TileType::Wall),
+        (HexCoordinate { q: 7, r: 2 }, TileType::Wall),
+        (HexCoordinate { q: 7, r: 1 }, TileType::Wall),
+        (HexCoordinate { q: 7, r: 0 }, TileType::Wall),
+        //
+        (HexCoordinate { q: 6, r: 0 }, TileType::Wall),
+        (HexCoordinate { q: 5, r: 0 }, TileType::Wall),
+        (HexCoordinate { q: 4, r: 0 }, TileType::Wall),
+        (HexCoordinate { q: 3, r: 0 }, TileType::Wall),
+        (HexCoordinate { q: 2, r: 0 }, TileType::Wall),
+        //
+        //
+        (HexCoordinate { q: 1, r: 1 }, TileType::Wall),
+        (start_coordinate.clone(), TileType::SlowDown),
+        (HexCoordinate { q: 1, r: 3 }, TileType::SlowDown),
+        (HexCoordinate { q: 1, r: 4 }, TileType::Wall),
+        //
+        (HexCoordinate { q: 2, r: 1 }, TileType::SlowDown),
+        (HexCoordinate { q: 2, r: 2 }, TileType::SlowDown),
+        (HexCoordinate { q: 2, r: 3 }, TileType::SlowDown),
+        (HexCoordinate { q: 2, r: 4 }, TileType::Wall),
+        //
+        (
+            HexCoordinate { q: 3, r: 2 },
+            TileType::SpeedUp(Facing::DownRight),
+        ),
+        (HexCoordinate { q: 3, r: 1 }, TileType::Goal),
+        (HexCoordinate { q: 3, r: 3 }, TileType::Wall),
+        (HexCoordinate { q: 3, r: 4 }, TileType::Wall),
+        //
+        (HexCoordinate { q: 4, r: 1 }, TileType::SlowDown),
+        (HexCoordinate { q: 4, r: 2 }, TileType::SlowDown),
+        (HexCoordinate { q: 4, r: 3 }, TileType::SlowDown),
+        (HexCoordinate { q: 4, r: 4 }, TileType::Wall),
+        //
+        (HexCoordinate { q: 5, r: 1 }, TileType::SlowDown),
+        (HexCoordinate { q: 5, r: 2 }, TileType::SlowDown),
+        (HexCoordinate { q: 5, r: 3 }, TileType::SlowDown),
+        (HexCoordinate { q: 5, r: 4 }, TileType::Wall),
+        //
+        (HexCoordinate { q: 6, r: 1 }, TileType::SlowDown),
+        (HexCoordinate { q: 6, r: 2 }, TileType::SlowDown),
+        (
+            HexCoordinate { q: 6, r: 3 },
+            TileType::SpeedUp(Facing::UpLeft),
+        ),
+        (HexCoordinate { q: 6, r: 4 }, TileType::Wall),
+    ]);
+
+    Level {
+        hex_radius: 60.0,
+        current_level: CurrentLevel::Level6,
         grid,
         goal_coordinate,
         stone_configs: vec![StoneConfig {

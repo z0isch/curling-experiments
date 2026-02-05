@@ -308,6 +308,7 @@ fn tip_ui(current_level: &CurrentLevel) -> Option<Vec<impl Bundle>> {
         CurrentLevel::Level3 => level_3_tip_ui(),
         CurrentLevel::Level4 => level_4_tip_ui(),
         CurrentLevel::Level5 => level_5_tip_ui(),
+        CurrentLevel::Level6 => vec![],
     };
     let mut bundles = Vec::new();
     for line in lines {
