@@ -485,7 +485,7 @@ fn get_level6() -> Level {
         goal_coordinate,
         stone_configs: vec![StoneConfig {
             start_coordinate,
-            velocity_magnitude: 200.0,
+            velocity_magnitude: 250.0,
             facing: Facing::DownRight,
         }],
         countdown: Some(3),

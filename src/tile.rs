@@ -488,7 +488,7 @@ pub fn compute_tile_effects(
                     // Pull towards the center of the goal
                     let to_center = tile_position - stone_pos;
                     let distance = to_center.length();
-                    if distance > (hex_grid.hex_radius / 2.) {
+                    if distance > (hex_grid.hex_radius * 1. / 4.) {
                         let direction = to_center / distance;
                         // Pull strength proportional to how much of stone is inside
                         let pull_strength = 0.5 * weighted_ratio;
