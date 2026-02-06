@@ -5,6 +5,8 @@ use bevy::{
 };
 use bevy_egui::EguiPrimaryContextPass;
 
+use crate::confetti::ConfettiMaterial;
+
 use crate::{
     PausableSystems,
     debug_ui::{DebugUIState, StoneUIConfig, debug_ui, on_debug_ui_level_change},
@@ -51,6 +53,7 @@ pub struct Celebration;
 
 pub(super) fn plugin(app: &mut App) {
     app.add_plugins(Material2dPlugin::<ScratchOffMaterial>::default())
+        .add_plugins(Material2dPlugin::<ConfettiMaterial>::default())
         .add_plugins(ui::plugin);
 
     app.init_state::<GameState>();
@@ -165,14 +168,14 @@ pub struct CelebrationTimer(Timer);
 
 impl Default for CelebrationTimer {
     fn default() -> Self {
-        Self(Timer::from_seconds(1.0, TimerMode::Once))
+        Self(Timer::from_seconds(3.0, TimerMode::Once))
     }
 }
 
 fn celebrate(
     mut commands: Commands,
     time: Res<Time>,
-    celebration_query: Query<Entity, With<Celebration>>,
+    celebration_query: Query<(Entity, &MeshMaterial2d<ConfettiMaterial>), With<Celebration>>,
     mut on_level: ResMut<OnLevel>,
     grid: Query<Entity, With<HexGrid>>,
     debug_ui_state: Res<DebugUIState>,
@@ -180,10 +183,14 @@ fn celebrate(
     meshes: ResMut<Assets<Mesh>>,
     materials: ResMut<Assets<ColorMaterial>>,
     scratch_materials: ResMut<Assets<ScratchOffMaterial>>,
+    mut confetti_materials: ResMut<Assets<ConfettiMaterial>>,
     current_drag_tile_type: ResMut<CurrentDragTileType>,
     mut celebration_timer: Local<CelebrationTimer>,
 ) {
-    if let Ok(celebration) = celebration_query.single() {
+    if let Some((celebration_entity, material_handle)) = celebration_query.iter().next() {
+        if let Some(material) = confetti_materials.get_mut(&material_handle.0) {
+            material.time += time.delta_secs();
+        }
         celebration_timer.0.tick(time.delta());
         if celebration_timer.0.is_finished()
             && let Some(next_level) = CurrentLevel::iterator()
@@ -203,15 +210,25 @@ fn celebrate(
                 current_drag_tile_type,
                 Some(&get_level(*next_level)),
             );
-            commands.entity(celebration).despawn();
+            commands.entity(celebration_entity).despawn();
             celebration_timer.0.reset();
         }
     }
 }
 
-fn on_level_complete(_event: On<LevelComplete>, mut commands: Commands) {
+fn on_level_complete(
+    _event: On<LevelComplete>,
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut confetti_materials: ResMut<Assets<ConfettiMaterial>>,
+) {
     log::info!("Level complete");
-    commands.spawn(Celebration);
+    commands.spawn((
+        Celebration,
+        Mesh2d(meshes.add(Rectangle::new(5000.0, 5000.0))),
+        MeshMaterial2d(confetti_materials.add(ConfettiMaterial { time: 0.0 })),
+        Transform::from_xyz(0.0, 0.0, 100.0), // High Z-index
+    ));
 }
 
 pub fn switch_broom(
