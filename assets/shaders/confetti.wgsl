@@ -3,7 +3,7 @@
 #import bevy_sprite::mesh2d_vertex_output::VertexOutput
 
 struct ConfettiMaterial {
-    time: f32,
+    params: vec4<f32>,
 };
 
 @group(2) @binding(0) var<uniform> material: ConfettiMaterial;
@@ -46,7 +46,7 @@ fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
     let p = vec2<f32>(uv.x * aspect, uv.y);
     
     var final_color = vec4<f32>(0.0);
-    let time = material.time;
+    let time = material.params.x;
     
     // Grid parameters for particle cells
     let grid_size = 20.0;
