@@ -297,6 +297,14 @@ pub fn update_tile_material(
             .clone()
             .unwrap_or(TileType::MaintainSpeed);
         let reveal_color = get_tile_color(&reveal_tile_type).to_linear();
+        let mut sorted_distance_dragged = tile_dragging.distance_dragged.iter().collect::<Vec<_>>();
+        sorted_distance_dragged.sort_by(|(_, a), (_, b)| b.partial_cmp(a).unwrap());
+        let top_tile_type = sorted_distance_dragged
+            .iter()
+            .map(|s| s.0)
+            .find(|s| **s != reveal_tile_type)
+            .unwrap_or(&reveal_tile_type);
+        let top_color = get_tile_color(top_tile_type).to_linear();
 
         for child in children.iter() {
             // Update scratch-off material properties
@@ -305,6 +313,7 @@ pub fn update_tile_material(
             {
                 material.progress = display_progress;
                 material.reveal_color = reveal_color;
+                material.top_color = top_color;
             }
         }
     }
