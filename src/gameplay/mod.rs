@@ -189,7 +189,7 @@ fn celebrate(
 ) {
     if let Some((celebration_entity, material_handle)) = celebration_query.iter().next() {
         if let Some(material) = confetti_materials.get_mut(&material_handle.0) {
-            material.time += time.delta_secs();
+            material.params.x += time.delta_secs();
         }
         celebration_timer.0.tick(time.delta());
         if celebration_timer.0.is_finished()
@@ -226,7 +226,9 @@ fn on_level_complete(
     commands.spawn((
         Celebration,
         Mesh2d(meshes.add(Rectangle::new(5000.0, 5000.0))),
-        MeshMaterial2d(confetti_materials.add(ConfettiMaterial { time: 0.0 })),
+        MeshMaterial2d(confetti_materials.add(ConfettiMaterial {
+            params: Vec4::new(0.0, 0.0, 0.0, 0.0),
+        })),
         Transform::from_xyz(0.0, 0.0, 100.0), // High Z-index
     ));
 }
