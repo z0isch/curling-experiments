@@ -215,7 +215,7 @@ fn level_0_ui() -> impl Bundle {
 
 fn level_1_tip_ui() -> Vec<Text> {
     [
-        Text::new("You can't effect the stone directly"),
+        Text::new("You can't affect the stone directly"),
         Text::new("Sweep tiles to control the speed"),
     ]
     .to_vec()
