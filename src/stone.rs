@@ -14,6 +14,12 @@ pub struct Stone {
 #[derive(Component, Clone)]
 pub struct Velocity(pub Vec2);
 
+#[derive(Component, Debug)]
+pub struct ReachedGoal;
+
+#[derive(Component)]
+pub struct StoneIsStopped;
+
 /// Returns a stone bundle at the given hex coordinate with the specified velocity
 pub fn stone(
     meshes: &mut Assets<Mesh>,
@@ -41,7 +47,17 @@ pub fn stone(
 
 pub fn update_stone_position(
     mut commands: Commands,
-    mut stone: Query<(&mut Stone, &mut Velocity, &mut Transform), With<Stone>>,
+    mut stone: Query<
+        (
+            Entity,
+            &mut Stone,
+            &mut Velocity,
+            &mut Transform,
+            Option<&ReachedGoal>,
+            Option<&StoneIsStopped>,
+        ),
+        With<Stone>,
+    >,
     goal: Single<&Transform, (Without<Stone>, With<IsGoal>)>,
     time: Res<Time<Fixed>>,
     debug_ui_state: Res<DebugUIState>,
@@ -51,7 +67,8 @@ pub fn update_stone_position(
     // Find goal tile position
     let goal_center = goal.translation.truncate();
 
-    for (mut stone, mut velocity, mut transform) in &mut stone {
+    for (stone_entity, mut stone, mut velocity, mut transform, reached_goal, stopped) in &mut stone
+    {
         // Move stone
         transform.translation += (velocity.0 * dt).extend(0.0);
 
@@ -62,12 +79,16 @@ pub fn update_stone_position(
         let distance_to_goal = stone_pos.distance(goal_center);
 
         if distance_to_goal < debug_ui_state.snap_distance && speed < debug_ui_state.snap_velocity {
-            transform.translation.x = goal_center.x;
-            transform.translation.y = goal_center.y;
-            velocity.0 = Vec2::ZERO;
-            stone.trail_accum = 0.0;
-            commands.trigger(LevelComplete);
-        } else if speed <= 2. {
+            if reached_goal.is_none() {
+                transform.translation.x = goal_center.x;
+                transform.translation.y = goal_center.y;
+                velocity.0 = Vec2::ZERO;
+                stone.trail_accum = 0.0;
+                commands.entity(stone_entity).insert(ReachedGoal);
+                commands.trigger(LevelComplete);
+            }
+        } else if speed <= 2. && stopped.is_none() {
+            commands.entity(stone_entity).insert(StoneIsStopped);
             commands.trigger(StoneStopped);
         }
     }

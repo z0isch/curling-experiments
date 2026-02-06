@@ -115,7 +115,7 @@ pub fn debug_ui(mut contexts: EguiContexts, mut debug_ui_state: ResMut<DebugUISt
 pub fn on_debug_ui_level_change(
     mut maybe_old_level: Local<Option<CurrentLevel>>,
     debug_ui_state: Res<DebugUIState>,
-    commands: Commands,
+    mut commands: Commands,
     grid: Query<Entity, With<HexGrid>>,
     stone_query: Query<Entity, With<Stone>>,
     meshes: ResMut<Assets<Mesh>>,
@@ -128,7 +128,7 @@ pub fn on_debug_ui_level_change(
         return;
     }
     restart_game(
-        commands,
+        &mut commands,
         grid,
         debug_ui_state,
         stone_query,

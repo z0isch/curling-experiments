@@ -46,6 +46,9 @@ pub enum GameState {
     Playing,
 }
 
+#[derive(Component)]
+pub struct Celebration;
+
 pub(super) fn plugin(app: &mut App) {
     app.add_plugins(Material2dPlugin::<ScratchOffMaterial>::default())
         .add_plugins(ui::plugin);
@@ -79,6 +82,7 @@ pub(super) fn plugin(app: &mut App) {
             update_tile_material,
             switch_broom,
             level_0_complete_check,
+            celebrate,
         )
             .in_set(MainUpdateSystems)
             .run_if(in_state(Screen::Gameplay))
@@ -133,7 +137,7 @@ pub fn setup(
 }
 
 pub fn spawn_game(
-    commands: Commands,
+    mut commands: Commands,
     grid: Query<Entity, With<HexGrid>>,
     debug_ui_state: Res<DebugUIState>,
     stone_query: Query<Entity, With<Stone>>,
@@ -144,7 +148,7 @@ pub fn spawn_game(
     on_level: Res<OnLevel>,
 ) {
     restart_game(
-        commands,
+        &mut commands,
         grid,
         debug_ui_state,
         stone_query,
@@ -156,9 +160,19 @@ pub fn spawn_game(
     );
 }
 
-fn on_level_complete(
-    _event: On<LevelComplete>,
-    commands: Commands,
+#[derive(Resource)]
+pub struct CelebrationTimer(Timer);
+
+impl Default for CelebrationTimer {
+    fn default() -> Self {
+        Self(Timer::from_seconds(1.0, TimerMode::Once))
+    }
+}
+
+fn celebrate(
+    mut commands: Commands,
+    time: Res<Time>,
+    celebration_query: Query<Entity, With<Celebration>>,
     mut on_level: ResMut<OnLevel>,
     grid: Query<Entity, With<HexGrid>>,
     debug_ui_state: Res<DebugUIState>,
@@ -167,26 +181,37 @@ fn on_level_complete(
     materials: ResMut<Assets<ColorMaterial>>,
     scratch_materials: ResMut<Assets<ScratchOffMaterial>>,
     current_drag_tile_type: ResMut<CurrentDragTileType>,
+    mut celebration_timer: Local<CelebrationTimer>,
 ) {
-    // TODO: get the next level after the current one in the iterator
-    if let Some(next_level) = CurrentLevel::iterator()
-        .skip_while(|&level| level != &on_level.0.current_level)
-        .nth(1)
-    {
-        on_level.0 = get_level(*next_level).clone();
+    if let Ok(celebration) = celebration_query.single() {
+        celebration_timer.0.tick(time.delta());
+        if celebration_timer.0.is_finished()
+            && let Some(next_level) = CurrentLevel::iterator()
+                .skip_while(|&level| level != &on_level.0.current_level)
+                .nth(1)
+        {
+            on_level.0 = get_level(*next_level).clone();
 
-        restart_game(
-            commands,
-            grid,
-            debug_ui_state,
-            stone_query,
-            meshes,
-            materials,
-            scratch_materials,
-            current_drag_tile_type,
-            Some(&get_level(*next_level)),
-        );
+            restart_game(
+                &mut commands,
+                grid,
+                debug_ui_state,
+                stone_query,
+                meshes,
+                materials,
+                scratch_materials,
+                current_drag_tile_type,
+                Some(&get_level(*next_level)),
+            );
+            commands.entity(celebration).despawn();
+            celebration_timer.0.reset();
+        }
     }
+}
+
+fn on_level_complete(_event: On<LevelComplete>, mut commands: Commands) {
+    log::info!("Level complete");
+    commands.spawn(Celebration);
 }
 
 pub fn switch_broom(
@@ -206,7 +231,7 @@ pub fn switch_broom(
 
 fn restart_game_on_r_key_pressed(
     input: Res<ButtonInput<KeyCode>>,
-    commands: Commands,
+    mut commands: Commands,
     grid: Query<Entity, With<HexGrid>>,
     debug_ui_state: Res<DebugUIState>,
     stone_query: Query<Entity, With<Stone>>,
@@ -218,7 +243,7 @@ fn restart_game_on_r_key_pressed(
 ) {
     if input.just_pressed(KeyCode::KeyR) {
         restart_game(
-            commands,
+            &mut commands,
             grid,
             debug_ui_state,
             stone_query,
@@ -231,7 +256,7 @@ fn restart_game_on_r_key_pressed(
     }
 }
 pub fn restart_game(
-    mut commands: Commands,
+    commands: &mut Commands,
     grid: Query<Entity, With<HexGrid>>,
     debug_ui_state: Res<DebugUIState>,
     stone_query: Query<Entity, With<Stone>>,
@@ -252,7 +277,7 @@ pub fn restart_game(
     let grid = HexGrid::new(level);
     let tile_assets = TileAssets::new(&mut meshes, &mut materials, &grid);
     spawn_hex_grid(
-        &mut commands,
+        commands,
         &grid,
         &tile_assets,
         &debug_ui_state,
@@ -492,6 +517,7 @@ fn level_0_complete_check(
     on_level: Res<OnLevel>,
     tile_query: Query<&TileDragging>,
     debug_ui_state: Res<DebugUIState>,
+    mut has_reached_goal: Local<bool>,
 ) {
     if (on_level.0.current_level == CurrentLevel::Level0)
         && tile_query.iter().all(|tile_dragging| {
@@ -502,7 +528,9 @@ fn level_0_complete_check(
                 + 2.0
                 >= debug_ui_state.min_sweep_distance
         })
+        && !*has_reached_goal
     {
         commands.trigger(LevelComplete);
+        *has_reached_goal = true;
     }
 }
