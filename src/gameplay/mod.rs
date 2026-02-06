@@ -4,8 +4,9 @@ use bevy::{
     sprite_render::Material2dPlugin,
 };
 use bevy_egui::EguiPrimaryContextPass;
+use bevy_seedling::sample::{AudioSample, SamplePlayer};
 
-use crate::confetti::ConfettiMaterial;
+use crate::{asset_tracking::LoadResource, confetti::ConfettiMaterial};
 
 use crate::{
     PausableSystems,
@@ -57,6 +58,7 @@ pub(super) fn plugin(app: &mut App) {
         .add_plugins(ui::plugin);
 
     app.init_state::<GameState>();
+    app.load_resource::<GameplayAssets>();
     app.add_systems(Startup, setup);
     app.add_systems(
         FixedUpdate,
@@ -100,6 +102,22 @@ pub(super) fn plugin(app: &mut App) {
     )
     .add_systems(EguiPrimaryContextPass, debug_ui)
     .add_observer(on_level_complete);
+}
+
+#[derive(Resource, Asset, Clone, Reflect)]
+#[reflect(Resource)]
+pub struct GameplayAssets {
+    #[dependency]
+    crowd: Handle<AudioSample>,
+}
+
+impl FromWorld for GameplayAssets {
+    fn from_world(world: &mut World) -> Self {
+        let assets = world.resource::<AssetServer>();
+        Self {
+            crowd: assets.load("audio/sfx/crowd.ogg"),
+        }
+    }
 }
 
 pub fn setup(
@@ -220,9 +238,9 @@ fn on_level_complete(
     _event: On<LevelComplete>,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
+    gameplay_assets: Res<GameplayAssets>,
     mut confetti_materials: ResMut<Assets<ConfettiMaterial>>,
 ) {
-    log::info!("Level complete");
     commands.spawn((
         Celebration,
         Mesh2d(meshes.add(Rectangle::new(5000.0, 5000.0))),
@@ -231,6 +249,7 @@ fn on_level_complete(
         })),
         Transform::from_xyz(0.0, 0.0, 100.0), // High Z-index
     ));
+    commands.spawn(SamplePlayer::new(gameplay_assets.crowd.clone()));
 }
 
 pub fn switch_broom(

@@ -42,15 +42,12 @@ impl FromWorld for SettingsAssets {
         let assets = world.resource::<AssetServer>();
         Self {
             music: assets.load("audio/music/selfless_courage.ogg"),
-            sfx: assets.load("audio/sfx/caw.ogg"),
+            sfx: assets.load("audio/sfx/crowd.ogg"),
         }
     }
 }
 
-fn spawn_settings_menu(mut master: Single<&mut VolumeNode, With<MainBus>>, mut commands: Commands) {
-    // Let's reduce the master volume a bit.
-    master.volume = CONVERTER.perceptual_to_volume(0.7);
-
+fn spawn_settings_menu(mut commands: Commands) {
     commands.spawn((
         DespawnOnExit(Menu::Settings),
         GlobalZIndex(2),
@@ -103,7 +100,11 @@ fn play_music(
     ));
 }
 
-fn play_sfx(_: On<Pointer<Click>>, mut commands: Commands, settings_assets: Res<SettingsAssets>) {
+pub fn play_sfx(
+    _: On<Pointer<Click>>,
+    mut commands: Commands,
+    settings_assets: Res<SettingsAssets>,
+) {
     // The default pool is routed to the `SoundEffectsBus`, so we don't
     // need to include any special markers for sound effects.
     commands.spawn(SamplePlayer::new(settings_assets.sfx.clone()));
