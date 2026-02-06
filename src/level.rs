@@ -45,7 +45,7 @@ impl Display for CurrentLevel {
     }
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Eq, Hash)]
 pub enum Facing {
     Up,
     UpRight,

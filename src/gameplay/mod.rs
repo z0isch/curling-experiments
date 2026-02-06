@@ -18,7 +18,7 @@ use crate::{
     },
     tile::{
         CurrentDragTileType, ScratchOffMaterial, TileAssets, TileDragging, TileType,
-        compute_tile_effects, toggle_tile_coordinates, update_tile_material, update_tile_type,
+        compute_tile_effects, toggle_tile_coordinates, update_tile_material,
     },
     ui,
 };
@@ -75,7 +75,6 @@ pub(super) fn plugin(app: &mut App) {
         Update,
         (
             draw_move_line,
-            update_tile_type,
             toggle_tile_coordinates,
             update_tile_material,
             switch_broom,
@@ -252,7 +251,13 @@ pub fn restart_game(
 
     let grid = HexGrid::new(level);
     let tile_assets = TileAssets::new(&mut meshes, &mut materials, &grid);
-    spawn_hex_grid(&mut commands, &grid, &tile_assets, &mut scratch_materials);
+    spawn_hex_grid(
+        &mut commands,
+        &grid,
+        &tile_assets,
+        &debug_ui_state,
+        &mut scratch_materials,
+    );
     for stone_entity in stone_query {
         commands.entity(stone_entity).despawn();
     }
@@ -265,7 +270,7 @@ pub fn restart_game(
                 &grid,
                 &stone_config.start_coordinate,
                 get_initial_stone_velocity(&stone_config.facing, &stone_config.velocity_magnitude),
-                debug_ui_state.stone_radius,
+                &debug_ui_state.stone_radius,
             ),
         ));
     }
@@ -279,7 +284,7 @@ fn draw_move_line(
     grid: Single<&HexGrid>,
     debug_ui_state: Res<DebugUIState>,
     stones: Query<(&Stone, &Velocity, &Transform)>,
-    tiles: Query<(&TileType, &Transform, Option<&TileDragging>), Without<Stone>>,
+    tiles: Query<(&Transform, &TileDragging), Without<Stone>>,
     lines: Query<Entity, With<StoneMoveLine>>,
     fixed_time: Res<Time<Fixed>>,
 ) {
@@ -290,9 +295,9 @@ fn draw_move_line(
     // Collect tile data for trajectory simulation (including dragging state)
     let tile_data: Vec<_> = tiles
         .iter()
-        .map(|(tile_type, transform, tile_dragging)| {
+        .map(|(transform, tile_dragging)| {
             let position = transform.translation.truncate();
-            (tile_type, position, tile_dragging)
+            (position, tile_dragging)
         })
         .collect();
 
@@ -317,7 +322,6 @@ fn draw_move_line(
         fixed_time.delta_secs(),
         debug_ui_state.slow_down_factor,
         debug_ui_state.rotation_factor,
-        debug_ui_state.min_sweep_distance,
         debug_ui_state.speed_up_factor,
     );
 
@@ -401,13 +405,12 @@ fn create_tapered_line_mesh(points: &[Vec2], start_width: f32, end_width: f32) -
 /// 3. apply_tile_velocity_effects (update velocity)
 fn simulate_trajectories(
     stone_data: &[(Vec2, Velocity, f32)], // (position, velocity, radius)
-    tile_data: &[(&TileType, Vec2, Option<&TileDragging>)],
+    tile_data: &[(Vec2, &TileDragging)],
     hex_grid: &HexGrid,
     drag_coefficient: f32,
     fixed_dt: f32,
     slow_down_factor: f32,
     rotation_factor: f32,
-    min_sweep_distance: f32,
     speed_up_factor: f32,
 ) -> Vec<Vec<Vec2>> {
     const MIN_VELOCITY: f32 = 1.0; // Stop when velocity is very low
@@ -469,7 +472,6 @@ fn simulate_trajectories(
                 *radius,
                 slow_down_factor,
                 rotation_factor,
-                min_sweep_distance,
                 speed_up_factor,
             );
         }
@@ -488,12 +490,18 @@ fn simulate_trajectories(
 fn level_0_complete_check(
     mut commands: Commands,
     on_level: Res<OnLevel>,
-    tile_query: Query<&TileType>,
+    tile_query: Query<&TileDragging>,
+    debug_ui_state: Res<DebugUIState>,
 ) {
     if (on_level.0.current_level == CurrentLevel::Level0)
-        && tile_query
-            .iter()
-            .all(|tile_type| *tile_type == TileType::MaintainSpeed)
+        && tile_query.iter().all(|tile_dragging| {
+            *tile_dragging
+                .distance_dragged
+                .get(&TileType::MaintainSpeed)
+                .unwrap_or(&0.0)
+                + 2.0
+                >= debug_ui_state.min_sweep_distance
+        })
     {
         commands.trigger(LevelComplete);
     }

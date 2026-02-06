@@ -1,11 +1,12 @@
 use bevy::prelude::*;
 
 use crate::{
+    debug_ui::DebugUIState,
     level::Level,
     screens::Screen,
     tile::{
-        ScratchOffMaterial, TileAssets, on_pointer_out, on_pointer_over, on_tile_drag_enter,
-        on_tile_dragging, tile,
+        CanBeDragged, IsGoal, ScratchOffMaterial, TileAssets, TileType, on_pointer_out,
+        on_pointer_over, on_tile_drag_enter, on_tile_dragging, tile, tile_can_be_dragged,
     },
 };
 
@@ -84,6 +85,7 @@ pub fn spawn_hex_grid(
     commands: &mut Commands,
     grid: &HexGrid,
     tile_assets: &TileAssets,
+    debug_ui_state: &Res<DebugUIState>,
     scratch_materials: &mut Assets<ScratchOffMaterial>,
 ) -> Entity {
     let mut tile_entities = Vec::new();
@@ -93,22 +95,26 @@ pub fn spawn_hex_grid(
             let world_pos = hex_to_world(&HexCoordinate { q, r }, grid);
             if let Some(tile_type) = grid.level.grid.get(&HexCoordinate { q, r }) {
                 let tile_id = commands
-                    .spawn((
-                        DespawnOnExit(Screen::Gameplay),
-                        tile(
-                            tile_type.clone(),
-                            world_pos,
-                            q,
-                            r,
-                            tile_assets,
-                            scratch_materials,
-                        ),
-                    ))
+                    .spawn((tile(
+                        tile_type,
+                        world_pos,
+                        q,
+                        r,
+                        debug_ui_state.min_sweep_distance,
+                        tile_assets,
+                        scratch_materials,
+                    ),))
                     .observe(on_pointer_over)
                     .observe(on_pointer_out)
                     .observe(on_tile_dragging)
                     .observe(on_tile_drag_enter)
                     .id();
+                if tile_can_be_dragged(tile_type) {
+                    commands.entity(tile_id).insert(CanBeDragged);
+                }
+                if tile_type == &TileType::Goal {
+                    commands.entity(tile_id).insert(IsGoal);
+                }
                 tile_entities.push(tile_id);
             }
         }

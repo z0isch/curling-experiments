@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use bevy::mesh::{Indices, PrimitiveTopology};
 use bevy::prelude::*;
 use bevy::render::render_resource::AsBindGroup;
@@ -37,15 +39,16 @@ impl Material2d for ScratchOffMaterial {
 /// Creates a tile bundle with all visual components for a hexagonal tile.
 /// Returns a bundle that can be spawned with `commands.spawn()`.
 pub fn tile(
-    tile_type: TileType,
+    tile_type: &TileType,
     world_pos: Vec2,
     q: i32,
     r: i32,
+    min_sweep_distance: f32,
     tile_assets: &TileAssets,
     scratch_materials: &mut Assets<ScratchOffMaterial>,
 ) -> impl Bundle {
     // Create a unique scratch-off material for this tile
-    let top_color = get_tile_color(&tile_type).to_linear();
+    let top_color = get_tile_color(tile_type).to_linear();
     let reveal_color = COLORS[0].to_linear(); // MaintainSpeed color
 
     let scratch_material = scratch_materials.add(ScratchOffMaterial {
@@ -63,7 +66,11 @@ pub fn tile(
     };
 
     (
-        tile_type,
+        TileDragging {
+            last_position: None,
+            distance_dragged: HashMap::from_iter([(tile_type.clone(), min_sweep_distance)]),
+            most_recent_tile_type: None,
+        },
         Visibility::Visible,
         Transform::from_xyz(world_pos.x, world_pos.y, 0.0)
             .with_rotation(Quat::from_rotation_z(std::f32::consts::FRAC_PI_6)),
@@ -121,7 +128,7 @@ pub const COLORS: [Color; 6] = [
 // Components
 // ============================================================================
 
-#[derive(Component, PartialEq, Debug, Clone)]
+#[derive(PartialEq, Debug, Clone, Eq, Hash)]
 pub enum TileType {
     Wall,
     MaintainSpeed,
@@ -140,13 +147,30 @@ pub struct TileCoordinateText;
 
 #[derive(Component, Debug)]
 pub struct TileDragging {
+    // Tracks the distance dragged for each tile type
+    // The initial tile type is stored as having dragged the min sweep distance
+    // All values in this map should sum to min sweep distance
+    // Check add_drag for some details
+    pub distance_dragged: HashMap<TileType, f32>,
     pub last_position: Option<Vec2>,
-    pub distance_dragged: f32,
-    pub tile_type: TileType,
+    pub most_recent_tile_type: Option<TileType>,
 }
 
 #[derive(Component)]
 pub struct MouseHover;
+
+#[derive(Component)]
+pub struct CanBeDragged;
+
+#[derive(Component)]
+pub struct IsGoal;
+
+pub fn tile_can_be_dragged(tile_type: &TileType) -> bool {
+    !matches!(
+        tile_type,
+        TileType::Wall | TileType::Goal | TileType::SpeedUp(_)
+    )
+}
 
 // ============================================================================
 // Resources
@@ -231,29 +255,24 @@ fn get_tile_color(tile_type: &TileType) -> Color {
 }
 
 pub fn update_tile_material(
-    tile_query: Query<(Entity, &TileType, Option<&TileDragging>)>,
+    tile_query: Query<(Entity, &TileDragging)>,
     children_query: Query<&Children>,
     _tile_assets: Res<TileAssets>,
     debug_ui_state: Res<DebugUIState>,
-    current_drag_tile_type: Res<CurrentDragTileType>,
     mut scratch_materials: ResMut<Assets<ScratchOffMaterial>>,
     fill_query: Query<&MeshMaterial2d<ScratchOffMaterial>, With<TileFill>>,
 ) {
-    for (entity, tile_type, tile_dragging) in tile_query {
-        match tile_type {
-            TileType::Wall => continue,
-            TileType::Goal => continue,
-            TileType::SpeedUp(_facing) => continue,
-            _ => {}
-        }
+    for (entity, tile_dragging) in tile_query {
         let Ok(children) = children_query.get(entity) else {
             continue;
         };
 
         // Calculate linear progress for scratch-off effect
-        let linear_progress = if let Some(dragging) = tile_dragging {
-            if debug_ui_state.min_sweep_distance > 0.0 {
-                (dragging.distance_dragged / debug_ui_state.min_sweep_distance).clamp(0.0, 1.0)
+        let linear_progress = if let Some(dragging) = &tile_dragging.most_recent_tile_type {
+            if debug_ui_state.min_sweep_distance > 0.0
+                && let Some(distance_dragged) = tile_dragging.distance_dragged.get(dragging)
+            {
+                (distance_dragged / debug_ui_state.min_sweep_distance).clamp(0.0, 1.0)
             } else {
                 0.0
             }
@@ -266,7 +285,7 @@ pub fn update_tile_material(
         let eased_progress = linear_progress.sqrt();
 
         // It's hard to see when the tile is almost complete, so we scale it down to 50%
-        let display_progress = if linear_progress >= 1.0 {
+        let display_progress = if linear_progress >= 0.99 {
             1.0
         } else {
             eased_progress * 0.50
@@ -274,9 +293,10 @@ pub fn update_tile_material(
 
         // Get the reveal color from either the tile's dragging state or the current drag tile type
         let reveal_tile_type = tile_dragging
-            .map(|d| &d.tile_type)
-            .unwrap_or(&current_drag_tile_type.0);
-        let reveal_color = get_tile_color(reveal_tile_type).to_linear();
+            .most_recent_tile_type
+            .clone()
+            .unwrap_or(TileType::MaintainSpeed);
+        let reveal_color = get_tile_color(&reveal_tile_type).to_linear();
 
         for child in children.iter() {
             // Update scratch-off material properties
@@ -286,17 +306,6 @@ pub fn update_tile_material(
                 material.progress = display_progress;
                 material.reveal_color = reveal_color;
             }
-        }
-    }
-}
-
-pub fn update_tile_type(
-    debug_ui_state: Res<DebugUIState>,
-    tiles: Query<(&TileDragging, &mut TileType)>,
-) {
-    for (tile_dragging, mut tile_type) in tiles {
-        if tile_dragging.distance_dragged > debug_ui_state.min_sweep_distance {
-            *tile_type = tile_dragging.tile_type.clone();
         }
     }
 }
@@ -315,34 +324,26 @@ pub fn on_pointer_out(out: On<Pointer<Out>>, mut commands: Commands) {
 
 pub fn on_tile_drag_enter(
     drag_enter: On<Pointer<DragEnter>>,
-    mut commands: Commands,
     mut tile_dragging_q: Query<Option<&mut TileDragging>>,
-    current_drag_tile_type: Res<CurrentDragTileType>,
 ) {
     if let Ok(Some(mut tile_dragging)) = tile_dragging_q.get_mut(drag_enter.entity) {
         tile_dragging.last_position = Some(drag_enter.pointer_location.position);
-    } else {
-        commands.entity(drag_enter.entity).insert(TileDragging {
-            last_position: Some(drag_enter.pointer_location.position),
-            distance_dragged: 0.0,
-            tile_type: current_drag_tile_type.0.clone(),
-        });
     }
 }
 
 pub fn on_tile_dragging(
     drag: On<Pointer<Drag>>,
-    mut tile: Single<(&mut TileDragging, &TileType), With<MouseHover>>,
+    mut tile: Single<&mut TileDragging, (With<MouseHover>, With<CanBeDragged>)>,
+    current_drag_tile_type: Res<CurrentDragTileType>,
 ) {
-    match tile.1 {
-        TileType::Wall => return,
-        TileType::Goal => return,
-        TileType::SpeedUp(_facing) => return,
-        _ => {}
-    }
-    if let Some(last_position) = tile.0.last_position {
-        tile.0.distance_dragged += (drag.pointer_location.position - last_position).length();
-        tile.0.last_position = Some(drag.pointer_location.position);
+    if let Some(last_position) = tile.last_position {
+        add_drag(
+            &mut tile.distance_dragged,
+            &current_drag_tile_type.0,
+            (drag.pointer_location.position - last_position).length(),
+        );
+        tile.most_recent_tile_type = Some(current_drag_tile_type.0.clone());
+        tile.last_position = Some(drag.pointer_location.position);
     }
 }
 
@@ -389,13 +390,12 @@ fn hex_edge_normal(relative_pos: Vec2) -> Vec2 {
 pub fn compute_tile_effects(
     stone_pos: Vec2,
     velocity: &crate::stone::Velocity,
-    tiles: &[(&TileType, Vec2, Option<&TileDragging>)],
+    tiles: &[(Vec2, &TileDragging)],
     hex_grid: &HexGrid,
     drag_coefficient: f32,
     stone_radius: f32,
     slow_down_factor: f32,
     rotation_factor: f32,
-    min_sweep_distance: f32,
     speed_up_factor: f32,
 ) -> crate::stone::Velocity {
     let mut new_velocity = velocity.0;
@@ -403,7 +403,7 @@ pub fn compute_tile_effects(
     let mut rotation_angle: f32 = 0.0;
     let mut total_drag: f32 = 0.0;
 
-    for (tile_type, tile_position, maybe_dragging) in tiles {
+    for (tile_position, dragging) in tiles {
         let ratio = intersection::ratio_circle_area_inside_hexagon(
             stone_pos,
             stone_radius,
@@ -415,27 +415,11 @@ pub fn compute_tile_effects(
             continue;
         }
 
-        // Calculate weights for blending between current type and drag target type
-        let (current_weight, drag_weight, drag_tile_type) = match *maybe_dragging {
-            Some(dragging) => {
-                if dragging.tile_type == **tile_type {
-                    (1.0, 0.0, None)
-                } else {
-                    let progress = if min_sweep_distance > 0.0 {
-                        (dragging.distance_dragged / min_sweep_distance).clamp(0.0, 1.0)
-                    } else {
-                        0.0
-                    };
-                    (1.0 - progress, progress, Some(&dragging.tile_type))
-                }
-            }
-            None => (1.0, 0.0, None),
-        };
-
-        // Helper closure to apply effects for a single tile type with a given weight
-        let mut apply_tile_effect = |tile_type: &TileType, weight: f32| {
+        let total_distance: f32 = dragging.distance_dragged.values().sum();
+        for (tile_type, distance) in &dragging.distance_dragged {
+            let weight = distance / total_distance;
             if weight < 0.001 {
-                return;
+                continue;
             }
             let weighted_ratio = ratio * weight;
 
@@ -498,14 +482,6 @@ pub fn compute_tile_effects(
                     }
                 }
             }
-        };
-
-        // Apply effects from the current tile type
-        apply_tile_effect(tile_type, current_weight);
-
-        // Apply effects from the drag target type (if dragging)
-        if let Some(drag_type) = drag_tile_type {
-            apply_tile_effect(drag_type, drag_weight);
         }
     }
 
@@ -526,4 +502,103 @@ pub fn compute_tile_effects(
     }
 
     crate::stone::Velocity(new_velocity)
+}
+
+// drag_distances should always sum to completely_swept_drag_distance
+// when adding a drag we need to subtract the drag_distance from all other tiles in drag_distances in the proportion of their current value to the sum of all values
+fn add_drag(
+    drag_distances: &mut HashMap<TileType, f32>,
+    tile_being_dragged: &TileType,
+    drag_distance: f32,
+) {
+    // Ensure the tile being dragged exists
+    drag_distances
+        .entry(tile_being_dragged.clone())
+        .or_insert(0.0);
+
+    let sum_others: f32 = drag_distances
+        .iter()
+        .filter(|(t, _)| *t != tile_being_dragged)
+        .map(|(_, v)| *v)
+        .sum();
+
+    // The amount we can actually add is limited by how much we can take from others
+    let amount_to_move = drag_distance.min(sum_others);
+
+    if amount_to_move > 0.0 && sum_others > 0.0 {
+        for (tile, value) in drag_distances.iter_mut() {
+            if tile != tile_being_dragged {
+                // Subtract proportionally
+                *value -= (*value / sum_others) * amount_to_move;
+            }
+        }
+        // Add to the tile being dragged
+        if let Some(value) = drag_distances.get_mut(tile_being_dragged) {
+            *value += amount_to_move;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_add_drag_proportional_reduction() {
+        let mut distances = HashMap::new();
+        distances.insert(TileType::SlowDown, 60.0);
+        distances.insert(TileType::Wall, 40.0);
+
+        // Current sum = 100.0. Drag MaintainSpeed by 10.0.
+        // MaintainSpeed is not in the map, it should be added.
+        // sum_others = 100.0.
+        // SlowDown should lose (60/100) * 10 = 6.0 => 54.0.
+        // Wall should lose (40/100) * 10 = 4.0 => 36.0.
+        // MaintainSpeed should gain 10.0 => 10.0.
+        add_drag(&mut distances, &TileType::MaintainSpeed, 10.0);
+
+        assert_eq!(distances.get(&TileType::SlowDown).copied().unwrap(), 54.0);
+        assert_eq!(distances.get(&TileType::Wall).copied().unwrap(), 36.0);
+        assert_eq!(
+            distances.get(&TileType::MaintainSpeed).copied().unwrap(),
+            10.0
+        );
+        assert_eq!(distances.values().sum::<f32>(), 100.0);
+    }
+
+    #[test]
+    fn test_add_drag_clamping() {
+        let mut distances = HashMap::new();
+        distances.insert(TileType::SlowDown, 10.0);
+        distances.insert(TileType::Wall, 90.0);
+
+        // Request 20.0 drag for SlowDown.
+        // sum_others = 90.0 (Wall).
+        // amount_to_move = min(20.0, 90.0) = 20.0.
+        // Wall loses 20.0 => 70.0.
+        // SlowDown gains 20.0 => 30.0.
+        add_drag(&mut distances, &TileType::SlowDown, 20.0);
+
+        assert_eq!(distances.get(&TileType::Wall).copied().unwrap(), 70.0);
+        assert_eq!(distances.get(&TileType::SlowDown).copied().unwrap(), 30.0);
+        assert_eq!(distances.values().sum::<f32>(), 100.0);
+    }
+
+    #[test]
+    fn test_add_drag_max_limit() {
+        let mut distances = HashMap::new();
+        distances.insert(TileType::SlowDown, 10.0);
+        distances.insert(TileType::Wall, 90.0);
+
+        // Request 200.0 drag for SlowDown.
+        // sum_others = 90.0.
+        // amount_to_move = min(200.0, 90.0) = 90.0.
+        // Wall loses 90.0 => 0.0.
+        // SlowDown gains 90.0 => 100.0.
+        add_drag(&mut distances, &TileType::SlowDown, 200.0);
+
+        assert_eq!(distances.get(&TileType::Wall).copied().unwrap(), 0.0);
+        assert_eq!(distances.get(&TileType::SlowDown).copied().unwrap(), 100.0);
+        assert_eq!(distances.values().sum::<f32>(), 100.0);
+    }
 }

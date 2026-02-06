@@ -3,7 +3,7 @@ use bevy::prelude::*;
 use crate::debug_ui::DebugUIState;
 use crate::gameplay::{LevelComplete, StoneStopped};
 use crate::hex_grid::{HexCoordinate, HexGrid, hex_to_world};
-use crate::tile::{TileDragging, TileType, compute_tile_effects};
+use crate::tile::{IsGoal, TileDragging, compute_tile_effects};
 
 #[derive(Component, Clone, Debug)]
 pub struct Stone {
@@ -21,15 +21,15 @@ pub fn stone(
     grid: &HexGrid,
     hex_coord: &HexCoordinate,
     velocity: Vec2,
-    radius: f32,
+    radius: &f32,
 ) -> impl Bundle {
     let black_material = materials.add(Color::BLACK);
-    let stone_mesh = meshes.add(Circle::new(radius));
+    let stone_mesh = meshes.add(Circle::new(*radius));
     let stone_world_pos = hex_to_world(hex_coord, grid);
 
     (
         Stone {
-            radius,
+            radius: *radius,
             trail_accum: 0.0,
         },
         Velocity(velocity),
@@ -42,20 +42,14 @@ pub fn stone(
 pub fn update_stone_position(
     mut commands: Commands,
     mut stone: Query<(&mut Stone, &mut Velocity, &mut Transform), With<Stone>>,
-    tiles: Query<(&TileType, &Transform), Without<Stone>>,
+    goal: Single<&Transform, (Without<Stone>, With<IsGoal>)>,
     time: Res<Time<Fixed>>,
     debug_ui_state: Res<DebugUIState>,
 ) {
     let dt = time.delta_secs();
 
     // Find goal tile position
-    let goal_pos = tiles.iter().find_map(|(tile_type, transform)| {
-        if *tile_type == TileType::Goal {
-            Some(transform.translation.truncate())
-        } else {
-            None
-        }
-    });
+    let goal_center = goal.translation.truncate();
 
     for (mut stone, mut velocity, mut transform) in &mut stone {
         // Move stone
@@ -64,21 +58,17 @@ pub fn update_stone_position(
         let speed = velocity.0.length();
 
         // If close enough to the goal and moving slow enough, snap to goal center
-        if let Some(goal_center) = goal_pos {
-            let stone_pos = transform.translation.truncate();
-            let distance_to_goal = stone_pos.distance(goal_center);
+        let stone_pos = transform.translation.truncate();
+        let distance_to_goal = stone_pos.distance(goal_center);
 
-            if distance_to_goal < debug_ui_state.snap_distance
-                && speed < debug_ui_state.snap_velocity
-            {
-                transform.translation.x = goal_center.x;
-                transform.translation.y = goal_center.y;
-                velocity.0 = Vec2::ZERO;
-                stone.trail_accum = 0.0;
-                commands.trigger(LevelComplete);
-            } else if speed <= 2. {
-                commands.trigger(StoneStopped);
-            }
+        if distance_to_goal < debug_ui_state.snap_distance && speed < debug_ui_state.snap_velocity {
+            transform.translation.x = goal_center.x;
+            transform.translation.y = goal_center.y;
+            velocity.0 = Vec2::ZERO;
+            stone.trail_accum = 0.0;
+            commands.trigger(LevelComplete);
+        } else if speed <= 2. {
+            commands.trigger(StoneStopped);
         }
     }
 }
@@ -160,16 +150,16 @@ pub fn apply_stone_collision(mut stone_query: Query<(&Stone, &mut Velocity, &Tra
 /// System that modifies stone velocity based on tile types it overlaps with.
 pub fn apply_tile_velocity_effects(
     stone_query: Query<(&Stone, &mut Velocity, &Transform)>,
-    tiles: Query<(&TileType, &Transform, Option<&TileDragging>), Without<Stone>>,
+    tiles: Query<(&Transform, &TileDragging), Without<Stone>>,
     grid: Single<&HexGrid>,
     debug_ui_state: Res<DebugUIState>,
 ) {
     for (stone, mut velocity, transform) in stone_query {
         let tile_data: Vec<_> = tiles
             .iter()
-            .map(|(tile_type, transform, tile_dragging)| {
+            .map(|(transform, tile_dragging)| {
                 let position = transform.translation.truncate();
-                (tile_type, position, tile_dragging)
+                (position, tile_dragging)
             })
             .collect();
 
@@ -183,7 +173,6 @@ pub fn apply_tile_velocity_effects(
             debug_ui_state.slow_down_factor,
             debug_ui_state.rotation_factor,
             debug_ui_state.min_sweep_distance,
-            debug_ui_state.speed_up_factor,
         );
     }
 }
