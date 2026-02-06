@@ -57,6 +57,14 @@ fn spawn_main_menu(mut commands: Commands) {
                 },
                 children![btn("Settings", open_settings_menu),],
             ));
+            parent.spawn((
+                Node {
+                    justify_content: JustifyContent::SpaceAround,
+                    width: Val::Percent(100.0),
+                    ..Default::default()
+                },
+                children![btn("Credits", open_credits_menu),],
+            ));
         });
 }
 
@@ -74,4 +82,8 @@ fn enter_loading_or_gameplay_screen(
 
 fn open_settings_menu(_: On<Pointer<Click>>, mut next_menu: ResMut<NextState<Menu>>) {
     next_menu.set(Menu::Settings);
+}
+
+fn open_credits_menu(_: On<Pointer<Click>>, mut next_menu: ResMut<NextState<Menu>>) {
+    next_menu.set(Menu::Credits);
 }
