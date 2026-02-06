@@ -6,7 +6,7 @@ use bevy::{
 use bevy_egui::EguiPrimaryContextPass;
 use bevy_seedling::sample::{AudioSample, SamplePlayer};
 
-use crate::{asset_tracking::LoadResource, confetti::ConfettiMaterial};
+use crate::{asset_tracking::LoadResource, confetti::ConfettiMaterial, tile::IsGoal};
 
 use crate::{
     PausableSystems,
@@ -88,6 +88,7 @@ pub(super) fn plugin(app: &mut App) {
             switch_broom,
             level_0_complete_check,
             celebrate,
+            play_get_in_there,
         )
             .in_set(MainUpdateSystems)
             .run_if(in_state(Screen::Gameplay))
@@ -109,6 +110,8 @@ pub(super) fn plugin(app: &mut App) {
 pub struct GameplayAssets {
     #[dependency]
     crowd: Handle<AudioSample>,
+    #[dependency]
+    get_in_there: Handle<AudioSample>,
 }
 
 impl FromWorld for GameplayAssets {
@@ -116,6 +119,7 @@ impl FromWorld for GameplayAssets {
         let assets = world.resource::<AssetServer>();
         Self {
             crowd: assets.load("audio/sfx/crowd.ogg"),
+            get_in_there: assets.load("audio/sfx/get_in_there.ogg"),
         }
     }
 }
@@ -570,5 +574,36 @@ fn level_0_complete_check(
     {
         commands.trigger(LevelComplete);
         *has_reached_goal = true;
+    }
+}
+
+#[derive(Component)]
+pub struct PlayedGetInThere;
+
+fn play_get_in_there(
+    mut commands: Commands,
+    gameplay_assets: Res<GameplayAssets>,
+    stone_query: Single<(Entity, &Transform, &Velocity), (With<Stone>, Without<PlayedGetInThere>)>,
+    goal_query: Single<&Transform, (With<IsGoal>, Without<Stone>)>,
+    debug_ui_state: Res<DebugUIState>,
+) {
+    let min_dist_from_snap = 80.0;
+    let min_velocity = 40.0;
+    let distance_from_goal_squared = stone_query
+        .1
+        .translation
+        .truncate()
+        .distance_squared(goal_query.translation.truncate());
+    let velocity_squared = stone_query.2.0.length_squared();
+    let inside_goal_tile =
+        distance_from_goal_squared <= debug_ui_state.hex_radius * debug_ui_state.hex_radius;
+    if distance_from_goal_squared
+        < (min_dist_from_snap * min_dist_from_snap)
+            + (debug_ui_state.snap_distance * debug_ui_state.snap_distance)
+        && velocity_squared < min_velocity * min_velocity
+        && !inside_goal_tile
+    {
+        commands.entity(stone_query.0).insert(PlayedGetInThere);
+        commands.spawn(SamplePlayer::new(gameplay_assets.get_in_there.clone()));
     }
 }
