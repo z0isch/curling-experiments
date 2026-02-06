@@ -391,6 +391,11 @@ fn hex_edge_normal(relative_pos: Vec2) -> Vec2 {
     HEX_EDGE_NORMALS[sector]
 }
 
+pub struct TileEffect {
+    pub velocity: crate::stone::Velocity,
+    pub did_hit_wall: bool,
+}
+
 /// Computes the new velocity after applying all tile effects at the given position.
 /// This is the core physics logic shared by both real-time simulation and trajectory prediction.
 ///
@@ -406,11 +411,12 @@ pub fn compute_tile_effects(
     slow_down_factor: f32,
     rotation_factor: f32,
     speed_up_factor: f32,
-) -> crate::stone::Velocity {
+) -> TileEffect {
     let mut new_velocity = velocity.0;
 
     let mut rotation_angle: f32 = 0.0;
     let mut total_drag: f32 = 0.0;
+    let mut did_hit_wall = false;
 
     for (tile_position, dragging) in tiles {
         let ratio = intersection::ratio_circle_area_inside_hexagon(
@@ -434,6 +440,7 @@ pub fn compute_tile_effects(
 
             match tile_type {
                 TileType::Wall => {
+                    did_hit_wall = true;
                     // Use proper hexagon edge normal instead of radial direction
                     let wall_normal = hex_edge_normal(stone_pos - tile_position);
                     let dot = new_velocity.dot(wall_normal);
@@ -510,7 +517,10 @@ pub fn compute_tile_effects(
         new_velocity *= drag_factor;
     }
 
-    crate::stone::Velocity(new_velocity)
+    TileEffect {
+        velocity: crate::stone::Velocity(new_velocity),
+        did_hit_wall,
+    }
 }
 
 // drag_distances should always sum to completely_swept_drag_distance

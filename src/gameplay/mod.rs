@@ -4,9 +4,15 @@ use bevy::{
     sprite_render::Material2dPlugin,
 };
 use bevy_egui::EguiPrimaryContextPass;
-use bevy_seedling::sample::{AudioSample, SamplePlayer};
+use bevy_seedling::{
+    prelude::{RepeatMode, Volume, VolumeNode},
+    sample::{AudioSample, SamplePlayer},
+    sample_effects,
+};
 
-use crate::{asset_tracking::LoadResource, confetti::ConfettiMaterial, tile::IsGoal};
+use crate::{
+    asset_tracking::LoadResource, confetti::ConfettiMaterial, stone::StoneHitWall, tile::IsGoal,
+};
 
 use crate::{
     PausableSystems,
@@ -60,6 +66,7 @@ pub(super) fn plugin(app: &mut App) {
     app.init_state::<GameState>();
     app.load_resource::<GameplayAssets>();
     app.add_systems(Startup, setup);
+    app.add_systems(OnEnter(GameState::Playing), start_stone_noise);
     app.add_systems(
         FixedUpdate,
         (
@@ -101,8 +108,16 @@ pub(super) fn plugin(app: &mut App) {
             .run_if(in_state(Screen::Gameplay))
             .in_set(PausableSystems),
     )
+    .add_systems(
+        Update,
+        update_stone_noise
+            .run_if(in_state(Screen::Gameplay))
+            .in_set(PausableSystems)
+            .run_if(in_state(GameState::Playing)),
+    )
     .add_systems(EguiPrimaryContextPass, debug_ui)
-    .add_observer(on_level_complete);
+    .add_observer(on_level_complete)
+    .add_observer(on_stone_hit_wall);
 }
 
 #[derive(Resource, Asset, Clone, Reflect)]
@@ -112,6 +127,10 @@ pub struct GameplayAssets {
     crowd: Handle<AudioSample>,
     #[dependency]
     get_in_there: Handle<AudioSample>,
+    #[dependency]
+    wind: Handle<AudioSample>,
+    #[dependency]
+    ding: Handle<AudioSample>,
 }
 
 impl FromWorld for GameplayAssets {
@@ -120,6 +139,8 @@ impl FromWorld for GameplayAssets {
         Self {
             crowd: assets.load("audio/sfx/crowd.ogg"),
             get_in_there: assets.load("audio/sfx/get_in_there.ogg"),
+            wind: assets.load("audio/sfx/wind.ogg"),
+            ding: assets.load("audio/sfx/ding.ogg"),
         }
     }
 }
@@ -159,6 +180,40 @@ pub fn setup(
     commands.insert_resource(tile_assets);
     commands.insert_resource(debug_ui_state.clone());
     commands.insert_resource(CurrentDragTileType(TileType::MaintainSpeed));
+}
+
+#[derive(Component)]
+pub struct StoneNoise;
+
+pub fn start_stone_noise(mut commands: Commands, gameplay_assets: Res<GameplayAssets>) {
+    commands.spawn((
+        StoneNoise,
+        DespawnOnExit(Screen::Gameplay),
+        DespawnOnExit(GameState::Playing),
+        SamplePlayer {
+            sample: gameplay_assets.wind.clone(),
+            repeat_mode: RepeatMode::RepeatEndlessly,
+            ..default()
+        },
+        sample_effects![(
+            StoneNoise,
+            VolumeNode {
+                volume: Volume::Linear(0.),
+                ..default()
+            }
+        )],
+    ));
+}
+
+pub fn update_stone_noise(
+    mut volume_node: Single<&mut VolumeNode, With<StoneNoise>>,
+    stone: Single<&Velocity, (With<Stone>, Changed<Velocity>)>,
+    debug_ui_state: Res<DebugUIState>,
+) {
+    let max_velocity = debug_ui_state.speed_up_factor;
+    // Use sqrt to make it louder for longer (decay slower)
+    let ratio = (stone.0.length() / max_velocity).sqrt();
+    volume_node.volume = Volume::from_percent(100. * ratio.clamp(0.0, 1.0));
 }
 
 pub fn spawn_game(
@@ -540,7 +595,8 @@ fn simulate_trajectories(
                 slow_down_factor,
                 rotation_factor,
                 speed_up_factor,
-            );
+            )
+            .velocity;
         }
     }
 
@@ -606,4 +662,12 @@ fn play_get_in_there(
         commands.entity(stone_query.0).insert(PlayedGetInThere);
         commands.spawn(SamplePlayer::new(gameplay_assets.get_in_there.clone()));
     }
+}
+
+fn on_stone_hit_wall(
+    _event: On<StoneHitWall>,
+    mut commands: Commands,
+    gameplay_assets: Res<GameplayAssets>,
+) {
+    commands.spawn(SamplePlayer::new(gameplay_assets.ding.clone()));
 }

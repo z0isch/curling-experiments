@@ -20,6 +20,9 @@ pub struct ReachedGoal;
 #[derive(Component)]
 pub struct StoneIsStopped;
 
+#[derive(Event)]
+pub struct StoneHitWall;
+
 /// Returns a stone bundle at the given hex coordinate with the specified velocity
 pub fn stone(
     meshes: &mut Assets<Mesh>,
@@ -170,6 +173,7 @@ pub fn apply_stone_collision(mut stone_query: Query<(&Stone, &mut Velocity, &Tra
 
 /// System that modifies stone velocity based on tile types it overlaps with.
 pub fn apply_tile_velocity_effects(
+    mut commands: Commands,
     stone_query: Query<(&Stone, &mut Velocity, &Transform)>,
     tiles: Query<(&Transform, &TileDragging), Without<Stone>>,
     grid: Single<&HexGrid>,
@@ -183,8 +187,7 @@ pub fn apply_tile_velocity_effects(
                 (position, tile_dragging)
             })
             .collect();
-
-        *velocity = compute_tile_effects(
+        let tile_effects = compute_tile_effects(
             transform.translation.truncate(),
             &velocity,
             &tile_data,
@@ -195,5 +198,9 @@ pub fn apply_tile_velocity_effects(
             debug_ui_state.rotation_factor,
             debug_ui_state.min_sweep_distance,
         );
+        *velocity = tile_effects.velocity;
+        if tile_effects.did_hit_wall {
+            commands.trigger(StoneHitWall);
+        }
     }
 }
