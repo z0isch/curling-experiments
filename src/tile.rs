@@ -69,6 +69,7 @@ pub fn tile(
             last_position: None,
             distance_dragged: HashMap::from_iter([(tile_type.clone(), min_sweep_distance)]),
             most_recent_tile_type: None,
+            drag_velocity: Vec2::ZERO,
         },
         Visibility::Visible,
         Transform::from_xyz(world_pos.x, world_pos.y, 0.0)
@@ -153,6 +154,9 @@ pub struct TileDragging {
     pub distance_dragged: HashMap<TileType, f32>,
     pub last_position: Option<Vec2>,
     pub most_recent_tile_type: Option<TileType>,
+    /// Smoothed drag velocity in screen-space pixels/second, computed from recent drag events.
+    /// Reset to Vec2::ZERO on DragEnd.
+    pub drag_velocity: Vec2,
 }
 
 #[derive(Component)]
@@ -343,15 +347,46 @@ pub fn on_tile_dragging(
     drag: On<Pointer<Drag>>,
     mut tile: Single<&mut TileDragging, (With<MouseHover>, With<CanBeDragged>)>,
     current_drag_tile_type: Res<CurrentDragTileType>,
+    time: Res<Time>,
 ) {
     if let Some(last_position) = tile.last_position {
+        let delta_pos = drag.pointer_location.position - last_position;
         add_drag(
             &mut tile.distance_dragged,
             &current_drag_tile_type.0,
-            (drag.pointer_location.position - last_position).length(),
+            delta_pos.length(),
         );
         tile.most_recent_tile_type = Some(current_drag_tile_type.0.clone());
         tile.last_position = Some(drag.pointer_location.position);
+
+        // Compute instantaneous velocity and smooth with exponential moving average
+        let dt = time.delta_secs();
+        if dt > 0.0 {
+            let instantaneous_velocity = delta_pos / dt;
+            // Smoothing factor: 0.0 = no smoothing (instant), 1.0 = no change
+            let smoothing = 0.3;
+            tile.drag_velocity =
+                tile.drag_velocity * smoothing + instantaneous_velocity * (1.0 - smoothing);
+        }
+    }
+}
+
+pub fn on_tile_drag_leave(
+    _drag_leave: On<Pointer<DragLeave>>,
+    mut tile_dragging_q: Query<&mut TileDragging>,
+) {
+    for mut tile_dragging in &mut tile_dragging_q {
+        tile_dragging.drag_velocity = Vec2::ZERO;
+    }
+}
+
+pub fn on_tile_drag_end(
+    _drag_end: On<Pointer<DragEnd>>,
+    mut tile_dragging_q: Query<&mut TileDragging>,
+) {
+    for mut tile_dragging in &mut tile_dragging_q {
+        tile_dragging.drag_velocity = Vec2::ZERO;
+        tile_dragging.last_position = None;
     }
 }
 

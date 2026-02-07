@@ -5,7 +5,8 @@ use crate::{
     screens::Screen,
     tile::{
         CanBeDragged, IsGoal, ScratchOffMaterial, TileAssets, TileType, on_pointer_out,
-        on_pointer_over, on_tile_drag_enter, on_tile_dragging, tile, tile_can_be_dragged,
+        on_pointer_over, on_tile_drag_end, on_tile_drag_enter, on_tile_drag_leave,
+        on_tile_dragging, tile, tile_can_be_dragged,
     },
 };
 
@@ -107,6 +108,8 @@ pub fn spawn_hex_grid(
                     .observe(on_pointer_out)
                     .observe(on_tile_dragging)
                     .observe(on_tile_drag_enter)
+                    .observe(on_tile_drag_end)
+                    .observe(on_tile_drag_leave)
                     .id();
                 if tile_can_be_dragged(tile_type) {
                     commands.entity(tile_id).insert(CanBeDragged);

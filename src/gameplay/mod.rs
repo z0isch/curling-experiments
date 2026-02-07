@@ -62,6 +62,7 @@ pub(super) fn plugin(app: &mut App) {
     app.load_resource::<GameplayAssets>();
     app.add_systems(Startup, setup);
     app.add_systems(OnEnter(GameState::Playing), start_stone_noise);
+    app.add_systems(OnEnter(Screen::Gameplay), start_tile_noise);
     app.add_systems(
         FixedUpdate,
         (
@@ -110,6 +111,7 @@ pub(super) fn plugin(app: &mut App) {
             .in_set(PausableSystems)
             .run_if(in_state(GameState::Playing)),
     )
+    .add_systems(Update, update_tile_noise)
     .add_observer(on_level_complete)
     .add_observer(on_stone_hit_wall);
 }
@@ -118,13 +120,15 @@ pub(super) fn plugin(app: &mut App) {
 #[reflect(Resource)]
 pub struct GameplayAssets {
     #[dependency]
-    crowd: Handle<AudioSample>,
+    pub crowd: Handle<AudioSample>,
     #[dependency]
-    get_in_there: Handle<AudioSample>,
+    pub get_in_there: Handle<AudioSample>,
     #[dependency]
-    wind: Handle<AudioSample>,
+    pub wind: Handle<AudioSample>,
     #[dependency]
-    ding: Handle<AudioSample>,
+    pub ding: Handle<AudioSample>,
+    #[dependency]
+    pub noise: Handle<AudioSample>,
 }
 
 impl FromWorld for GameplayAssets {
@@ -135,6 +139,7 @@ impl FromWorld for GameplayAssets {
             get_in_there: assets.load("audio/sfx/get_in_there.ogg"),
             wind: assets.load("audio/sfx/wind.ogg"),
             ding: assets.load("audio/sfx/ding.ogg"),
+            noise: assets.load("audio/sfx/noise.ogg"),
         }
     }
 }
@@ -157,6 +162,27 @@ pub fn setup(
 
 #[derive(Component)]
 pub struct StoneNoise;
+
+#[derive(Component)]
+pub struct TileNoise;
+
+pub fn start_tile_noise(mut commands: Commands, gameplay_assets: Res<GameplayAssets>) {
+    commands.spawn((
+        DespawnOnExit(Screen::Gameplay),
+        SamplePlayer {
+            sample: gameplay_assets.noise.clone(),
+            repeat_mode: RepeatMode::RepeatEndlessly,
+            ..default()
+        },
+        sample_effects![(
+            TileNoise,
+            VolumeNode {
+                volume: Volume::Linear(0.),
+                ..default()
+            }
+        )],
+    ));
+}
 
 pub fn start_stone_noise(mut commands: Commands, gameplay_assets: Res<GameplayAssets>) {
     commands.spawn((
@@ -187,6 +213,17 @@ pub fn update_stone_noise(
     // Use sqrt to make it louder for longer (decay slower)
     let ratio = (stone.0.length() / max_velocity).sqrt();
     volume_node.volume = Volume::from_percent(100. * ratio.clamp(0.0, 1.0));
+}
+
+pub fn update_tile_noise(
+    mut volume_node: Single<&mut VolumeNode, With<TileNoise>>,
+    tile_dragging: Query<&TileDragging, Changed<TileDragging>>,
+) {
+    let max_velocity_squared = 250000.;
+    for tile_dragging in tile_dragging {
+        let ratio = tile_dragging.drag_velocity.length_squared() / max_velocity_squared;
+        volume_node.volume = Volume::from_percent(100. * ratio.clamp(0.0, 1.0));
+    }
 }
 
 pub fn spawn_game(
