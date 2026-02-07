@@ -5,6 +5,7 @@ use bevy::sprite_render::Material2d;
 
 #[derive(Asset, TypePath, AsBindGroup, Debug, Clone)]
 pub struct ConfettiMaterial {
+    /// x = time, y = framebuffer_width, z = framebuffer_height, w = unused
     #[uniform(0)]
     pub params: Vec4,
 }

@@ -35,8 +35,8 @@ fn sdBox(p: vec2<f32>, b: vec2<f32>) -> f32 {
 
 @fragment
 fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
-    // Current window resolution is 1024x768 based on main.rs
-    let resolution = vec2<f32>(1024.0, 768.0);
+    // Read actual framebuffer resolution from material uniform (accounts for HiDPI scaling)
+    let resolution = vec2<f32>(material.params.y, material.params.z);
     
     // Normalize gl_FragCoord to 0..1 range for the screen
     let uv = in.position.xy / resolution;

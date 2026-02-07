@@ -275,13 +275,25 @@ fn on_level_complete(
     mut meshes: ResMut<Assets<Mesh>>,
     gameplay_assets: Res<GameplayAssets>,
     mut confetti_materials: ResMut<Assets<ConfettiMaterial>>,
+    windows: Query<&Window>,
 ) {
+    // Get actual framebuffer resolution (physical pixels, accounting for HiDPI scaling)
+    let (fb_width, fb_height) = if let Ok(window) = windows.single() {
+        let scale = window.scale_factor();
+        (
+            window.resolution.width() * scale,
+            window.resolution.height() * scale,
+        )
+    } else {
+        (1024.0, 768.0)
+    };
+
     commands.spawn((
         Celebration,
         DespawnOnExit(Screen::Gameplay),
         Mesh2d(meshes.add(Rectangle::new(5000.0, 5000.0))),
         MeshMaterial2d(confetti_materials.add(ConfettiMaterial {
-            params: Vec4::new(0.0, 0.0, 0.0, 0.0),
+            params: Vec4::new(0.0, fb_width, fb_height, 0.0),
         })),
         Transform::from_xyz(0.0, 0.0, 100.0), // High Z-index
     ));
