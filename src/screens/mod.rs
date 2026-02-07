@@ -1,3 +1,4 @@
+mod end;
 mod gameplay;
 mod loading;
 mod title;
@@ -8,7 +9,12 @@ pub(super) fn plugin(app: &mut App) {
     app.init_state::<Screen>();
     app.init_resource::<LoadingDestination>();
 
-    app.add_plugins((gameplay::plugin, loading::plugin, title::plugin));
+    app.add_plugins((
+        gameplay::plugin,
+        loading::plugin,
+        title::plugin,
+        end::plugin,
+    ));
 }
 
 #[derive(Resource, Copy, Clone, Eq, PartialEq, Hash, Debug, Default)]
@@ -24,4 +30,5 @@ pub enum Screen {
     Title,
     Loading,
     Gameplay,
+    End,
 }

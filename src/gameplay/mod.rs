@@ -263,32 +263,36 @@ fn celebrate(
     mut confetti_materials: ResMut<Assets<ConfettiMaterial>>,
     current_drag_tile_type: ResMut<CurrentDragTileType>,
     mut celebration_timer: Local<CelebrationTimer>,
+    mut next_screen: ResMut<NextState<Screen>>,
 ) {
     if let Some((celebration_entity, material_handle)) = celebration_query.iter().next() {
         if let Some(material) = confetti_materials.get_mut(&material_handle.0) {
             material.params.x += time.delta_secs();
         }
         celebration_timer.0.tick(time.delta());
-        if celebration_timer.0.is_finished()
-            && let Some(next_level) = CurrentLevel::iterator()
+        if celebration_timer.0.is_finished() {
+            if let Some(next_level) = CurrentLevel::iterator()
                 .skip_while(|&level| level != &on_level.0.current_level)
                 .nth(1)
-        {
-            on_level.0 = get_level(*next_level).clone();
+            {
+                on_level.0 = get_level(*next_level).clone();
 
-            restart_game(
-                &mut commands,
-                grid,
-                debug_ui_state,
-                stone_query,
-                meshes,
-                materials,
-                scratch_materials,
-                current_drag_tile_type,
-                Some(&get_level(*next_level)),
-            );
-            commands.entity(celebration_entity).despawn();
-            celebration_timer.0.reset();
+                restart_game(
+                    &mut commands,
+                    grid,
+                    debug_ui_state,
+                    stone_query,
+                    meshes,
+                    materials,
+                    scratch_materials,
+                    current_drag_tile_type,
+                    Some(&get_level(*next_level)),
+                );
+                commands.entity(celebration_entity).despawn();
+                celebration_timer.0.reset();
+            } else {
+                next_screen.set(Screen::End);
+            }
         }
     }
 }
@@ -302,6 +306,7 @@ fn on_level_complete(
 ) {
     commands.spawn((
         Celebration,
+        DespawnOnExit(Screen::Gameplay),
         Mesh2d(meshes.add(Rectangle::new(5000.0, 5000.0))),
         MeshMaterial2d(confetti_materials.add(ConfettiMaterial {
             params: Vec4::new(0.0, 0.0, 0.0, 0.0),
