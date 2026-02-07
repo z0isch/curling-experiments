@@ -330,6 +330,7 @@ fn on_level_complete(
     commands.spawn((
         Celebration,
         DespawnOnExit(Screen::Gameplay),
+        DespawnOnExit(GameState::Playing),
         Mesh2d(meshes.add(Rectangle::new(5000.0, 5000.0))),
         MeshMaterial2d(confetti_materials.add(ConfettiMaterial {
             params: Vec4::new(0.0, fb_width, fb_height, 0.0),
