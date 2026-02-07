@@ -152,6 +152,7 @@ pub fn setup(
     let tile_assets = TileAssets::new(&mut meshes, &mut materials, &grid);
     commands.insert_resource(tile_assets);
     commands.insert_resource(CurrentDragTileType(TileType::MaintainSpeed));
+    commands.set_state(GameState::Initial);
 }
 
 #[derive(Component)]
@@ -198,10 +199,6 @@ pub fn spawn_game(
     current_drag_tile_type: ResMut<CurrentDragTileType>,
     on_level: Res<OnLevel>,
 ) {
-    let current_level = CurrentLevel::default();
-    let level = get_level(current_level);
-    commands.insert_resource(OnLevel(level.clone()));
-    commands.set_state(GameState::Initial);
     restart_game(
         &mut commands,
         grid,
@@ -588,25 +585,31 @@ fn simulate_trajectories(
     trajectories
 }
 
+#[derive(Component)]
+pub struct Level0Completed;
+
 fn level_0_complete_check(
     mut commands: Commands,
     on_level: Res<OnLevel>,
-    tile_query: Query<&TileDragging>,
-    mut has_reached_goal: Local<bool>,
+    tile_query: Query<(Entity, &TileDragging, Option<&Level0Completed>)>,
 ) {
     if (on_level.0.current_level == CurrentLevel::Level0)
-        && tile_query.iter().all(|tile_dragging| {
-            *tile_dragging
-                .distance_dragged
-                .get(&TileType::MaintainSpeed)
-                .unwrap_or(&0.0)
-                + 2.0
-                >= on_level.0.min_sweep_distance
-        })
-        && !*has_reached_goal
+        && tile_query
+            .iter()
+            .all(|(_, tile_dragging, level0_completed)| {
+                *tile_dragging
+                    .distance_dragged
+                    .get(&TileType::MaintainSpeed)
+                    .unwrap_or(&0.0)
+                    + 2.0
+                    >= on_level.0.min_sweep_distance
+                    && level0_completed.is_none()
+            })
     {
+        for (entity, _, _) in tile_query.iter() {
+            commands.entity(entity).insert(Level0Completed);
+        }
         commands.trigger(LevelComplete);
-        *has_reached_goal = true;
     }
 }
 
