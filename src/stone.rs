@@ -1,8 +1,8 @@
 use bevy::prelude::*;
 
-use crate::debug_ui::DebugUIState;
 use crate::gameplay::{LevelComplete, StoneStopped};
 use crate::hex_grid::{HexCoordinate, HexGrid, hex_to_world};
+use crate::level::OnLevel;
 use crate::tile::{IsGoal, TileDragging, compute_tile_effects};
 
 #[derive(Component, Clone, Debug)]
@@ -63,7 +63,7 @@ pub fn update_stone_position(
     >,
     goal: Single<&Transform, (Without<Stone>, With<IsGoal>)>,
     time: Res<Time<Fixed>>,
-    debug_ui_state: Res<DebugUIState>,
+    on_level: Res<OnLevel>,
 ) {
     let dt = time.delta_secs();
 
@@ -81,7 +81,7 @@ pub fn update_stone_position(
         let stone_pos = transform.translation.truncate();
         let distance_to_goal = stone_pos.distance(goal_center);
 
-        if distance_to_goal < debug_ui_state.snap_distance && speed < debug_ui_state.snap_velocity {
+        if distance_to_goal < on_level.0.snap_distance && speed < on_level.0.snap_velocity {
             if reached_goal.is_none() {
                 transform.translation.x = goal_center.x;
                 transform.translation.y = goal_center.y;
@@ -177,7 +177,7 @@ pub fn apply_tile_velocity_effects(
     stone_query: Query<(&Stone, &mut Velocity, &Transform)>,
     tiles: Query<(&Transform, &TileDragging), Without<Stone>>,
     grid: Single<&HexGrid>,
-    debug_ui_state: Res<DebugUIState>,
+    on_level: Res<OnLevel>,
 ) {
     for (stone, mut velocity, transform) in stone_query {
         let tile_data: Vec<_> = tiles
@@ -192,11 +192,11 @@ pub fn apply_tile_velocity_effects(
             &velocity,
             &tile_data,
             *grid,
-            debug_ui_state.drag_coefficient,
+            on_level.0.drag_coefficient,
             stone.radius,
-            debug_ui_state.slow_down_factor,
-            debug_ui_state.rotation_factor,
-            debug_ui_state.min_sweep_distance,
+            on_level.0.slow_down_factor,
+            on_level.0.rotation_factor,
+            on_level.0.min_sweep_distance,
         );
         *velocity = tile_effects.velocity;
         if tile_effects.did_hit_wall {

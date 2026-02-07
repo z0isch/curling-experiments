@@ -4,7 +4,7 @@ use bevy_egui::{EguiContexts, egui};
 use crate::{
     gameplay::restart_game,
     hex_grid::HexGrid,
-    level::{CurrentLevel, Facing},
+    level::{CurrentLevel, Facing, OnLevel, get_level},
     stone::Stone,
     tile::{CurrentDragTileType, ScratchOffMaterial},
 };
@@ -30,7 +30,11 @@ pub struct DebugUIState {
     pub speed_up_factor: f32,
 }
 
-pub fn debug_ui(mut contexts: EguiContexts, mut debug_ui_state: ResMut<DebugUIState>) -> Result {
+pub fn debug_ui(
+    mut contexts: EguiContexts,
+    mut debug_ui_state: ResMut<DebugUIState>,
+    mut on_level: ResMut<OnLevel>,
+) -> Result {
     egui::Window::new("Debug")
         .default_open(false)
         .show(contexts.ctx_mut()?, |debug_ui| {
@@ -109,6 +113,18 @@ pub fn debug_ui(mut contexts: EguiContexts, mut debug_ui_state: ResMut<DebugUISt
                 });
             }
         });
+
+    // Sync debug UI state to the active level
+    on_level.0.hex_radius = debug_ui_state.hex_radius;
+    on_level.0.stone_radius = debug_ui_state.stone_radius;
+    on_level.0.min_sweep_distance = debug_ui_state.min_sweep_distance;
+    on_level.0.drag_coefficient = debug_ui_state.drag_coefficient;
+    on_level.0.slow_down_factor = debug_ui_state.slow_down_factor;
+    on_level.0.rotation_factor = debug_ui_state.rotation_factor;
+    on_level.0.snap_distance = debug_ui_state.snap_distance;
+    on_level.0.snap_velocity = debug_ui_state.snap_velocity;
+    on_level.0.speed_up_factor = debug_ui_state.speed_up_factor;
+
     Ok(())
 }
 
@@ -122,20 +138,22 @@ pub fn on_debug_ui_level_change(
     materials: ResMut<Assets<ColorMaterial>>,
     scratch_materials: ResMut<Assets<ScratchOffMaterial>>,
     current_drag_tile_type: ResMut<CurrentDragTileType>,
+    mut on_level: ResMut<OnLevel>,
 ) {
     let old_level = maybe_old_level.replace(debug_ui_state.current_level);
     if old_level == Some(debug_ui_state.current_level) || old_level.is_none() {
         return;
     }
+    let level = get_level(debug_ui_state.current_level);
+    on_level.0 = level.clone();
     restart_game(
         &mut commands,
         grid,
-        debug_ui_state,
         stone_query,
         meshes,
         materials,
         scratch_materials,
         current_drag_tile_type,
-        None,
+        &level,
     );
 }

@@ -1,7 +1,6 @@
 use bevy::prelude::*;
 
 use crate::{
-    debug_ui::DebugUIState,
     level::Level,
     screens::Screen,
     tile::{
@@ -85,7 +84,7 @@ pub fn spawn_hex_grid(
     commands: &mut Commands,
     grid: &HexGrid,
     tile_assets: &TileAssets,
-    debug_ui_state: &Res<DebugUIState>,
+    level: &Level,
     scratch_materials: &mut Assets<ScratchOffMaterial>,
 ) -> Entity {
     let mut tile_entities = Vec::new();
@@ -100,7 +99,7 @@ pub fn spawn_hex_grid(
                         world_pos,
                         q,
                         r,
-                        debug_ui_state.min_sweep_distance,
+                        level.min_sweep_distance,
                         tile_assets,
                         scratch_materials,
                     ),))

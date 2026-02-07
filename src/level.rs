@@ -4,6 +4,9 @@ use bevy::prelude::*;
 
 use crate::{hex_grid::HexCoordinate, tile::TileType};
 
+#[derive(Resource)]
+pub struct OnLevel(pub Level);
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum CurrentLevel {
     #[default]
@@ -99,6 +102,14 @@ pub struct Level {
     pub stone_configs: Vec<StoneConfig>,
     pub countdown: Option<u32>,
     pub hex_radius: f32,
+    pub drag_coefficient: f32,
+    pub min_sweep_distance: f32,
+    pub stone_radius: f32,
+    pub slow_down_factor: f32,
+    pub rotation_factor: f32,
+    pub snap_distance: f32,
+    pub snap_velocity: f32,
+    pub speed_up_factor: f32,
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -134,6 +145,14 @@ fn get_level0() -> Level {
         goal_coordinate: HexCoordinate { q: 0, r: 0 },
         stone_configs: vec![],
         countdown: None,
+        drag_coefficient: 0.0036,
+        min_sweep_distance: 1000.0,
+        stone_radius: 15.0,
+        slow_down_factor: 5.0,
+        rotation_factor: 0.025,
+        snap_distance: 40.0,
+        snap_velocity: 40.0,
+        speed_up_factor: 250.0,
     }
 }
 
@@ -183,6 +202,14 @@ fn get_level1() -> Level {
             facing: Facing::DownRight,
         }],
         countdown: Some(3),
+        drag_coefficient: 0.0036,
+        min_sweep_distance: 250.0,
+        stone_radius: 15.0,
+        slow_down_factor: 5.0,
+        rotation_factor: 0.025,
+        snap_distance: 40.0,
+        snap_velocity: 40.0,
+        speed_up_factor: 250.0,
     }
 }
 
@@ -233,6 +260,14 @@ fn get_level2() -> Level {
             facing: Facing::DownRight,
         }],
         countdown: Some(3),
+        drag_coefficient: 0.0036,
+        min_sweep_distance: 250.0,
+        stone_radius: 15.0,
+        slow_down_factor: 5.0,
+        rotation_factor: 0.025,
+        snap_distance: 40.0,
+        snap_velocity: 40.0,
+        speed_up_factor: 250.0,
     }
 }
 
@@ -277,6 +312,14 @@ fn get_level3() -> Level {
             facing: Facing::DownRight,
         }],
         countdown: Some(3),
+        drag_coefficient: 0.0036,
+        min_sweep_distance: 250.0,
+        stone_radius: 15.0,
+        slow_down_factor: 5.0,
+        rotation_factor: 0.025,
+        snap_distance: 40.0,
+        snap_velocity: 40.0,
+        speed_up_factor: 250.0,
     }
 }
 
@@ -330,6 +373,14 @@ fn get_level4() -> Level {
             facing: Facing::DownRight,
         }],
         countdown: Some(3),
+        drag_coefficient: 0.0036,
+        min_sweep_distance: 250.0,
+        stone_radius: 15.0,
+        slow_down_factor: 5.0,
+        rotation_factor: 0.025,
+        snap_distance: 40.0,
+        snap_velocity: 40.0,
+        speed_up_factor: 250.0,
     }
 }
 
@@ -415,6 +466,14 @@ fn get_level5() -> Level {
             facing: Facing::DownRight,
         }],
         countdown: Some(3),
+        drag_coefficient: 0.0036,
+        min_sweep_distance: 250.0,
+        stone_radius: 15.0,
+        slow_down_factor: 5.0,
+        rotation_factor: 0.025,
+        snap_distance: 40.0,
+        snap_velocity: 40.0,
+        speed_up_factor: 250.0,
     }
 }
 
@@ -489,5 +548,13 @@ fn get_level6() -> Level {
             facing: Facing::DownRight,
         }],
         countdown: Some(3),
+        drag_coefficient: 0.0036,
+        min_sweep_distance: 250.0,
+        stone_radius: 15.0,
+        slow_down_factor: 5.0,
+        rotation_factor: 0.025,
+        snap_distance: 40.0,
+        snap_velocity: 40.0,
+        speed_up_factor: 250.0,
     }
 }

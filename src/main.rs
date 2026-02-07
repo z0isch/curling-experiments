@@ -6,7 +6,7 @@
 mod asset_tracking;
 mod confetti;
 mod crt_postprocess;
-mod debug_ui;
+//mod debug_ui;
 #[cfg(feature = "dev")]
 mod dev_tools;
 mod fire_trail;

@@ -2,7 +2,8 @@ use bevy::prelude::*;
 
 use crate::{
     PausableSystems,
-    gameplay::{GameState, OnLevel, StoneStopped},
+    gameplay::{GameState, StoneStopped},
+    level::OnLevel,
     level::CurrentLevel,
     screens::Screen,
     tile::{CurrentDragTileType, TileType},
@@ -426,3 +427,4 @@ fn on_stone_stopped(
         commands.spawn(stone_stopped_ui());
     }
 }
+

@@ -6,10 +6,9 @@ use bevy::render::render_resource::AsBindGroup;
 use bevy::shader::ShaderRef;
 use bevy::sprite_render::Material2d;
 
-use crate::debug_ui::DebugUIState;
 use crate::hex_grid::HexGrid;
 use crate::intersection;
-use crate::level::Facing;
+use crate::level::{Facing, OnLevel};
 
 // ============================================================================
 // Custom Scratch-Off Material
@@ -258,7 +257,7 @@ pub fn update_tile_material(
     tile_query: Query<(Entity, &TileDragging)>,
     children_query: Query<&Children>,
     _tile_assets: Res<TileAssets>,
-    debug_ui_state: Res<DebugUIState>,
+    on_level: Res<OnLevel>,
     mut scratch_materials: ResMut<Assets<ScratchOffMaterial>>,
     fill_query: Query<&MeshMaterial2d<ScratchOffMaterial>, With<TileFill>>,
 ) {
@@ -269,10 +268,10 @@ pub fn update_tile_material(
 
         // Calculate linear progress for scratch-off effect
         let linear_progress = if let Some(dragging) = &tile_dragging.most_recent_tile_type {
-            if debug_ui_state.min_sweep_distance > 0.0
+            if on_level.0.min_sweep_distance > 0.0
                 && let Some(distance_dragged) = tile_dragging.distance_dragged.get(dragging)
             {
-                (distance_dragged / debug_ui_state.min_sweep_distance).clamp(0.0, 1.0)
+                (distance_dragged / on_level.0.min_sweep_distance).clamp(0.0, 1.0)
             } else {
                 0.0
             }

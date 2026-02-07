@@ -3,7 +3,6 @@ use bevy::{
     prelude::*,
     sprite_render::Material2dPlugin,
 };
-use bevy_egui::EguiPrimaryContextPass;
 use bevy_seedling::{
     prelude::{RepeatMode, Volume, VolumeNode},
     sample::{AudioSample, SamplePlayer},
@@ -16,10 +15,9 @@ use crate::{
 
 use crate::{
     PausableSystems,
-    debug_ui::{DebugUIState, StoneUIConfig, debug_ui, on_debug_ui_level_change},
     fire_trail::{spawn_fire_trail, update_fire_trail},
     hex_grid::{HexGrid, spawn_hex_grid},
-    level::{CurrentLevel, Level, get_initial_stone_velocity, get_level},
+    level::{CurrentLevel, Level, OnLevel, get_initial_stone_velocity, get_level},
     screens::Screen,
     stone::{
         Stone, Velocity, apply_stone_collision, apply_tile_velocity_effects, resolve_collision,
@@ -40,9 +38,6 @@ pub struct LevelComplete;
 
 #[derive(Event)]
 pub struct StoneStopped;
-
-#[derive(Resource)]
-pub struct OnLevel(pub Level);
 
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct MainUpdateSystems;
@@ -103,7 +98,7 @@ pub(super) fn plugin(app: &mut App) {
     )
     .add_systems(
         Update,
-        (restart_game_on_r_key_pressed, on_debug_ui_level_change)
+        (restart_game_on_r_key_pressed) //, on_debug_ui_level_change)
             .after(MainUpdateSystems)
             .run_if(in_state(Screen::Gameplay))
             .in_set(PausableSystems),
@@ -115,7 +110,6 @@ pub(super) fn plugin(app: &mut App) {
             .in_set(PausableSystems)
             .run_if(in_state(GameState::Playing)),
     )
-    .add_systems(EguiPrimaryContextPass, debug_ui)
     .add_observer(on_level_complete)
     .add_observer(on_stone_hit_wall);
 }
@@ -154,31 +148,9 @@ pub fn setup(
     let level = get_level(current_level);
     commands.insert_resource(OnLevel(level.clone()));
 
-    let debug_ui_state = DebugUIState {
-        hex_radius: 60.0,
-        stone_radius: 15.0,
-        min_sweep_distance: 250.0,
-        drag_coefficient: 0.0036,
-        slow_down_factor: 5.0,
-        rotation_factor: 0.025,
-        snap_distance: 40.0,
-        snap_velocity: 40.0,
-        current_level,
-        speed_up_factor: 250.0,
-        stone_configs: level
-            .stone_configs
-            .iter()
-            .map(|sc| StoneUIConfig {
-                velocity_magnitude: sc.velocity_magnitude,
-                facing: sc.facing.clone(),
-            })
-            .collect(),
-    };
-
     let grid = HexGrid::new(&level);
     let tile_assets = TileAssets::new(&mut meshes, &mut materials, &grid);
     commands.insert_resource(tile_assets);
-    commands.insert_resource(debug_ui_state.clone());
     commands.insert_resource(CurrentDragTileType(TileType::MaintainSpeed));
 }
 
@@ -208,9 +180,9 @@ pub fn start_stone_noise(mut commands: Commands, gameplay_assets: Res<GameplayAs
 pub fn update_stone_noise(
     mut volume_node: Single<&mut VolumeNode, With<StoneNoise>>,
     stone: Single<&Velocity, (With<Stone>, Changed<Velocity>)>,
-    debug_ui_state: Res<DebugUIState>,
+    on_level: Res<OnLevel>,
 ) {
-    let max_velocity = debug_ui_state.speed_up_factor;
+    let max_velocity = on_level.0.speed_up_factor;
     // Use sqrt to make it louder for longer (decay slower)
     let ratio = (stone.0.length() / max_velocity).sqrt();
     volume_node.volume = Volume::from_percent(100. * ratio.clamp(0.0, 1.0));
@@ -219,7 +191,6 @@ pub fn update_stone_noise(
 pub fn spawn_game(
     mut commands: Commands,
     grid: Query<Entity, With<HexGrid>>,
-    debug_ui_state: Res<DebugUIState>,
     stone_query: Query<Entity, With<Stone>>,
     meshes: ResMut<Assets<Mesh>>,
     materials: ResMut<Assets<ColorMaterial>>,
@@ -227,16 +198,19 @@ pub fn spawn_game(
     current_drag_tile_type: ResMut<CurrentDragTileType>,
     on_level: Res<OnLevel>,
 ) {
+    let current_level = CurrentLevel::default();
+    let level = get_level(current_level);
+    commands.insert_resource(OnLevel(level.clone()));
+    commands.set_state(GameState::Initial);
     restart_game(
         &mut commands,
         grid,
-        debug_ui_state,
         stone_query,
         meshes,
         materials,
         scratch_materials,
         current_drag_tile_type,
-        Some(&on_level.0),
+        &on_level.0,
     );
 }
 
@@ -255,7 +229,6 @@ fn celebrate(
     celebration_query: Query<(Entity, &MeshMaterial2d<ConfettiMaterial>), With<Celebration>>,
     mut on_level: ResMut<OnLevel>,
     grid: Query<Entity, With<HexGrid>>,
-    debug_ui_state: Res<DebugUIState>,
     stone_query: Query<Entity, With<Stone>>,
     meshes: ResMut<Assets<Mesh>>,
     materials: ResMut<Assets<ColorMaterial>>,
@@ -280,13 +253,12 @@ fn celebrate(
                 restart_game(
                     &mut commands,
                     grid,
-                    debug_ui_state,
                     stone_query,
                     meshes,
                     materials,
                     scratch_materials,
                     current_drag_tile_type,
-                    Some(&get_level(*next_level)),
+                    &get_level(*next_level),
                 );
                 commands.entity(celebration_entity).despawn();
                 celebration_timer.0.reset();
@@ -335,7 +307,6 @@ fn restart_game_on_r_key_pressed(
     input: Res<ButtonInput<KeyCode>>,
     mut commands: Commands,
     grid: Query<Entity, With<HexGrid>>,
-    debug_ui_state: Res<DebugUIState>,
     stone_query: Query<Entity, With<Stone>>,
     meshes: ResMut<Assets<Mesh>>,
     materials: ResMut<Assets<ColorMaterial>>,
@@ -347,30 +318,26 @@ fn restart_game_on_r_key_pressed(
         restart_game(
             &mut commands,
             grid,
-            debug_ui_state,
             stone_query,
             meshes,
             materials,
             scratch_materials,
             current_drag_tile_type,
-            Some(&on_level.0),
+            &on_level.0,
         );
     }
 }
 pub fn restart_game(
     commands: &mut Commands,
     grid: Query<Entity, With<HexGrid>>,
-    debug_ui_state: Res<DebugUIState>,
     stone_query: Query<Entity, With<Stone>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
     mut scratch_materials: ResMut<Assets<ScratchOffMaterial>>,
     mut current_drag_tile_type: ResMut<CurrentDragTileType>,
-    level: Option<&Level>,
+    level: &Level,
 ) {
     *current_drag_tile_type = CurrentDragTileType(TileType::MaintainSpeed);
-    let debug_level = get_level(debug_ui_state.current_level);
-    let level = level.unwrap_or(&debug_level);
 
     for grid_entity in grid {
         commands.entity(grid_entity).despawn();
@@ -378,13 +345,7 @@ pub fn restart_game(
 
     let grid = HexGrid::new(level);
     let tile_assets = TileAssets::new(&mut meshes, &mut materials, &grid);
-    spawn_hex_grid(
-        commands,
-        &grid,
-        &tile_assets,
-        &debug_ui_state,
-        &mut scratch_materials,
-    );
+    spawn_hex_grid(commands, &grid, &tile_assets, level, &mut scratch_materials);
     for stone_entity in stone_query {
         commands.entity(stone_entity).despawn();
     }
@@ -397,7 +358,7 @@ pub fn restart_game(
                 &grid,
                 &stone_config.start_coordinate,
                 get_initial_stone_velocity(&stone_config.facing, &stone_config.velocity_magnitude),
-                &debug_ui_state.stone_radius,
+                &level.stone_radius,
             ),
         ));
     }
@@ -409,7 +370,7 @@ fn draw_move_line(
     mut meshes: ResMut<Assets<Mesh>>,
     tile_assets: Res<TileAssets>,
     grid: Single<&HexGrid>,
-    debug_ui_state: Res<DebugUIState>,
+    on_level: Res<OnLevel>,
     stones: Query<(&Stone, &Velocity, &Transform)>,
     tiles: Query<(&Transform, &TileDragging), Without<Stone>>,
     lines: Query<Entity, With<StoneMoveLine>>,
@@ -445,11 +406,11 @@ fn draw_move_line(
         &stone_data,
         &tile_data,
         *grid,
-        debug_ui_state.drag_coefficient,
+        on_level.0.drag_coefficient,
         fixed_time.delta_secs(),
-        debug_ui_state.slow_down_factor,
-        debug_ui_state.rotation_factor,
-        debug_ui_state.speed_up_factor,
+        on_level.0.slow_down_factor,
+        on_level.0.rotation_factor,
+        on_level.0.speed_up_factor,
     );
 
     for trajectory in trajectories {
@@ -619,7 +580,6 @@ fn level_0_complete_check(
     mut commands: Commands,
     on_level: Res<OnLevel>,
     tile_query: Query<&TileDragging>,
-    debug_ui_state: Res<DebugUIState>,
     mut has_reached_goal: Local<bool>,
 ) {
     if (on_level.0.current_level == CurrentLevel::Level0)
@@ -629,7 +589,7 @@ fn level_0_complete_check(
                 .get(&TileType::MaintainSpeed)
                 .unwrap_or(&0.0)
                 + 2.0
-                >= debug_ui_state.min_sweep_distance
+                >= on_level.0.min_sweep_distance
         })
         && !*has_reached_goal
     {
@@ -646,7 +606,7 @@ fn play_get_in_there(
     gameplay_assets: Res<GameplayAssets>,
     stone_query: Single<(Entity, &Transform, &Velocity), (With<Stone>, Without<PlayedGetInThere>)>,
     goal_query: Single<&Transform, (With<IsGoal>, Without<Stone>)>,
-    debug_ui_state: Res<DebugUIState>,
+    on_level: Res<OnLevel>,
 ) {
     let min_dist_from_snap = 80.0;
     let min_velocity = 40.0;
@@ -657,10 +617,10 @@ fn play_get_in_there(
         .distance_squared(goal_query.translation.truncate());
     let velocity_squared = stone_query.2.0.length_squared();
     let inside_goal_tile =
-        distance_from_goal_squared <= debug_ui_state.hex_radius * debug_ui_state.hex_radius;
+        distance_from_goal_squared <= on_level.0.hex_radius * on_level.0.hex_radius;
     if distance_from_goal_squared
         < (min_dist_from_snap * min_dist_from_snap)
-            + (debug_ui_state.snap_distance * debug_ui_state.snap_distance)
+            + (on_level.0.snap_distance * on_level.0.snap_distance)
         && velocity_squared < min_velocity * min_velocity
         && !inside_goal_tile
     {

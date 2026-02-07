@@ -169,3 +169,4 @@ pub fn update_fire_trail(
         }
     }
 }
+
