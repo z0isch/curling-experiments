@@ -17,11 +17,12 @@ pub enum CurrentLevel {
     Level4,
     Level5,
     Level6,
+    Level7,
 }
 
 impl CurrentLevel {
     pub fn iterator() -> Iter<'static, CurrentLevel> {
-        static LEVELS: [CurrentLevel; 7] = [
+        static LEVELS: [CurrentLevel; 8] = [
             CurrentLevel::Level0,
             CurrentLevel::Level1,
             CurrentLevel::Level2,
@@ -29,6 +30,7 @@ impl CurrentLevel {
             CurrentLevel::Level4,
             CurrentLevel::Level5,
             CurrentLevel::Level6,
+            CurrentLevel::Level7,
         ];
         LEVELS.iter()
     }
@@ -44,21 +46,25 @@ impl Display for CurrentLevel {
             CurrentLevel::Level4 => write!(f, "Level 4"),
             CurrentLevel::Level5 => write!(f, "Level 5"),
             CurrentLevel::Level6 => write!(f, "Level 6"),
+            CurrentLevel::Level7 => write!(f, "Level 7"),
         }
     }
 }
 
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
 pub enum Facing {
+    #[allow(dead_code)]
     Up,
     UpRight,
     DownRight,
     Down,
+    #[allow(dead_code)]
     DownLeft,
     UpLeft,
 }
 
 impl Facing {
+    #[allow(dead_code)]
     pub fn iterator() -> Iter<'static, Facing> {
         static DIRECTIONS: [Facing; 6] = [
             Facing::Up,
@@ -110,6 +116,7 @@ pub struct Level {
     pub snap_distance: f32,
     pub snap_velocity: f32,
     pub speed_up_factor: f32,
+    pub speed_up_arrow_radius: f32,
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -132,6 +139,7 @@ pub fn get_level(current_level: CurrentLevel) -> Level {
         CurrentLevel::Level4 => get_level4(),
         CurrentLevel::Level5 => get_level5(),
         CurrentLevel::Level6 => get_level6(),
+        CurrentLevel::Level7 => get_level7(),
     }
 }
 
@@ -153,6 +161,7 @@ fn get_level0() -> Level {
         snap_distance: 40.0,
         snap_velocity: 40.0,
         speed_up_factor: 250.0,
+        speed_up_arrow_radius: 0.,
     }
 }
 
@@ -210,6 +219,7 @@ fn get_level1() -> Level {
         snap_distance: 40.0,
         snap_velocity: 40.0,
         speed_up_factor: 250.0,
+        speed_up_arrow_radius: 15.,
     }
 }
 
@@ -268,6 +278,7 @@ fn get_level2() -> Level {
         snap_distance: 40.0,
         snap_velocity: 40.0,
         speed_up_factor: 250.0,
+        speed_up_arrow_radius: 15.,
     }
 }
 
@@ -320,6 +331,7 @@ fn get_level3() -> Level {
         snap_distance: 40.0,
         snap_velocity: 40.0,
         speed_up_factor: 250.0,
+        speed_up_arrow_radius: 15.,
     }
 }
 
@@ -381,6 +393,7 @@ fn get_level4() -> Level {
         snap_distance: 40.0,
         snap_velocity: 40.0,
         speed_up_factor: 250.0,
+        speed_up_arrow_radius: 15.,
     }
 }
 
@@ -474,6 +487,7 @@ fn get_level5() -> Level {
         snap_distance: 40.0,
         snap_velocity: 40.0,
         speed_up_factor: 250.0,
+        speed_up_arrow_radius: 15.,
     }
 }
 
@@ -556,5 +570,99 @@ fn get_level6() -> Level {
         snap_distance: 40.0,
         snap_velocity: 40.0,
         speed_up_factor: 250.0,
+        speed_up_arrow_radius: 15.,
+    }
+}
+
+fn get_level7() -> Level {
+    let goal_coordinate = HexCoordinate { q: 4, r: 4 };
+    let start_coordinate = HexCoordinate { q: 1, r: 1 };
+
+    let grid = HashMap::from([
+        (HexCoordinate { q: 0, r: 0 }, TileType::Wall),
+        (HexCoordinate { q: 0, r: 1 }, TileType::Wall),
+        (HexCoordinate { q: 0, r: 2 }, TileType::Wall),
+        (HexCoordinate { q: 0, r: 3 }, TileType::Wall),
+        (HexCoordinate { q: 0, r: 4 }, TileType::Wall),
+        (HexCoordinate { q: 0, r: 5 }, TileType::Wall),
+        //
+        (HexCoordinate { q: 1, r: 5 }, TileType::Wall),
+        (HexCoordinate { q: 2, r: 5 }, TileType::Wall),
+        (HexCoordinate { q: 3, r: 5 }, TileType::Wall),
+        (HexCoordinate { q: 4, r: 5 }, TileType::Wall),
+        (HexCoordinate { q: 5, r: 5 }, TileType::Wall),
+        //
+        (HexCoordinate { q: 4, r: 0 }, TileType::Wall),
+        (HexCoordinate { q: 2, r: 0 }, TileType::Wall),
+        (HexCoordinate { q: 1, r: 0 }, TileType::Wall),
+        (HexCoordinate { q: 7, r: 2 }, TileType::Wall),
+        (HexCoordinate { q: 7, r: 3 }, TileType::Wall),
+        //
+        //
+        (start_coordinate.clone(), TileType::MaintainSpeed),
+        (
+            HexCoordinate { q: 1, r: 2 },
+            TileType::SpeedUp(Facing::DownRight),
+        ),
+        (HexCoordinate { q: 1, r: 3 }, TileType::SlowDown),
+        (HexCoordinate { q: 1, r: 4 }, TileType::SpeedUp(Facing::Up)),
+        //
+        (HexCoordinate { q: 2, r: 1 }, TileType::SlowDown),
+        (HexCoordinate { q: 2, r: 2 }, TileType::SlowDown),
+        (HexCoordinate { q: 2, r: 3 }, TileType::SlowDown),
+        (HexCoordinate { q: 2, r: 4 }, TileType::SlowDown),
+        //
+        (HexCoordinate { q: 3, r: 1 }, TileType::Wall),
+        (HexCoordinate { q: 3, r: 2 }, TileType::SlowDown),
+        (HexCoordinate { q: 3, r: 3 }, TileType::SlowDown),
+        (
+            HexCoordinate { q: 3, r: 4 },
+            TileType::SpeedUp(Facing::DownLeft),
+        ),
+        //
+        (
+            HexCoordinate { q: 4, r: 1 },
+            TileType::SpeedUp(Facing::DownLeft),
+        ),
+        (HexCoordinate { q: 4, r: 2 }, TileType::SlowDown),
+        (
+            HexCoordinate { q: 4, r: 3 },
+            TileType::SpeedUp(Facing::UpRight),
+        ),
+        (HexCoordinate { q: 4, r: 4 }, TileType::Goal),
+        //
+        (HexCoordinate { q: 5, r: 1 }, TileType::Wall),
+        (HexCoordinate { q: 5, r: 2 }, TileType::SlowDown),
+        (HexCoordinate { q: 5, r: 3 }, TileType::SlowDown),
+        (HexCoordinate { q: 5, r: 4 }, TileType::Wall),
+        //
+        (HexCoordinate { q: 6, r: 1 }, TileType::Wall),
+        (
+            HexCoordinate { q: 6, r: 2 },
+            TileType::SpeedUp(Facing::UpLeft),
+        ),
+        (HexCoordinate { q: 6, r: 3 }, TileType::Wall),
+    ]);
+
+    Level {
+        hex_radius: 60.0,
+        current_level: CurrentLevel::Level7,
+        grid,
+        goal_coordinate,
+        stone_configs: vec![StoneConfig {
+            start_coordinate,
+            velocity_magnitude: 200.0,
+            facing: Facing::DownRight,
+        }],
+        countdown: Some(3),
+        drag_coefficient: 0.0036,
+        min_sweep_distance: 250.0,
+        stone_radius: 15.0,
+        slow_down_factor: 5.0,
+        rotation_factor: 0.025,
+        snap_distance: 40.0,
+        snap_velocity: 40.0,
+        speed_up_factor: 250.0,
+        speed_up_arrow_radius: 47.,
     }
 }

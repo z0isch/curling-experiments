@@ -197,6 +197,7 @@ pub fn apply_tile_velocity_effects(
             on_level.0.slow_down_factor,
             on_level.0.rotation_factor,
             on_level.0.min_sweep_distance,
+            on_level.0.speed_up_arrow_radius,
         );
         *velocity = tile_effects.velocity;
         if tile_effects.did_hit_wall {

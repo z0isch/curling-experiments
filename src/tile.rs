@@ -59,7 +59,7 @@ pub fn tile(
     let (arrow_visibility, arrow_rotation) = match &tile_type {
         TileType::SpeedUp(facing) => (
             Visibility::Visible,
-            Quat::from_rotation_z(facing.to_angle() - std::f32::consts::FRAC_PI_6),
+            Quat::from_rotation_z(facing.to_angle() - 2. * std::f32::consts::FRAC_PI_3),
         ),
         _ => (Visibility::Hidden, Quat::IDENTITY),
     };
@@ -198,13 +198,18 @@ impl TileAssets {
         meshes: &mut Assets<Mesh>,
         materials: &mut Assets<ColorMaterial>,
         hex_grid: &HexGrid,
+        speed_up_arrow_radius: f32,
     ) -> Self {
         let border_thickness = 1.0;
 
         let mut arrow_mesh = Mesh::new(PrimitiveTopology::TriangleList, default());
+        let arrow_verts = arrow_local_vertices(speed_up_arrow_radius);
         arrow_mesh.insert_attribute(
             Mesh::ATTRIBUTE_POSITION,
-            vec![[20.0, 0.0, 0.0], [-7.5, 12.5, 0.0], [-7.5, -12.5, 0.0]],
+            arrow_verts
+                .iter()
+                .map(|v| [v.x, v.y, 0.0])
+                .collect::<Vec<_>>(),
         );
         arrow_mesh.insert_indices(Indices::U32(vec![0, 1, 2]));
 
@@ -425,6 +430,54 @@ fn hex_edge_normal(relative_pos: Vec2) -> Vec2 {
     HEX_EDGE_NORMALS[sector]
 }
 
+/// Returns the local-space vertices of the speed-up arrow triangle.
+///
+/// Isosceles triangle inscribed in a circle of the given radius, pointing up (+Y).
+/// Bottom vertices are at ±30° from the bottom center, giving a tall narrow arrow shape.
+fn arrow_local_vertices(radius: f32) -> [Vec2; 3] {
+    let r = radius;
+    [
+        Vec2::new(0.0, r),                   // tip
+        Vec2::new(-r * 0.5, -r * 0.8660254), // bottom-left  (30° left of -Y)
+        Vec2::new(r * 0.5, -r * 0.8660254),  // bottom-right (30° right of -Y)
+    ]
+}
+
+/// Computes the world-space vertices of the speed-up arrow triangle.
+///
+/// The arrow is rotated by the combined parent tile rotation (PI/6) and the arrow's
+/// own rotation (facing.to_angle() - 2*PI/3), giving a total world rotation of
+/// `facing.to_angle() - PI/2`.
+fn arrow_triangle_world_vertices(
+    tile_position: Vec2,
+    facing: &crate::level::Facing,
+    arrow_radius: f32,
+) -> [Vec2; 3] {
+    let local_verts = arrow_local_vertices(arrow_radius);
+
+    // Total world rotation = parent PI/6 + arrow (facing.to_angle() - 2*PI/3) = facing.to_angle() - PI/2
+    let rotation_angle = facing.to_angle() - std::f32::consts::FRAC_PI_2;
+    let (sin_a, cos_a) = rotation_angle.sin_cos();
+
+    local_verts.map(|v| {
+        let rotated = Vec2::new(v.x * cos_a - v.y * sin_a, v.x * sin_a + v.y * cos_a);
+        tile_position + rotated
+    })
+}
+
+/// Checks if a point is inside a triangle using the cross-product (sign of area) method.
+fn point_in_triangle(p: Vec2, v0: Vec2, v1: Vec2, v2: Vec2) -> bool {
+    let cross = |a: Vec2, b: Vec2| a.x * b.y - a.y * b.x;
+    let d1 = cross(p - v0, v1 - v0);
+    let d2 = cross(p - v1, v2 - v1);
+    let d3 = cross(p - v2, v0 - v2);
+
+    let has_neg = (d1 < 0.0) || (d2 < 0.0) || (d3 < 0.0);
+    let has_pos = (d1 > 0.0) || (d2 > 0.0) || (d3 > 0.0);
+
+    !(has_neg && has_pos)
+}
+
 pub struct TileEffect {
     pub velocity: crate::stone::Velocity,
     pub did_hit_wall: bool,
@@ -445,6 +498,7 @@ pub fn compute_tile_effects(
     slow_down_factor: f32,
     rotation_factor: f32,
     speed_up_factor: f32,
+    speed_up_arrow_radius: f32,
 ) -> TileEffect {
     let mut new_velocity = velocity.0;
 
@@ -518,17 +572,24 @@ pub fn compute_tile_effects(
                     total_drag += drag_coefficient * slow_down_factor * weighted_ratio;
                 }
                 TileType::SpeedUp(facing) => {
-                    // Pull towards the center of the goal
-                    let to_center = tile_position - stone_pos;
-                    let distance = to_center.length();
-                    if distance > (hex_grid.hex_radius * 1. / 4.) {
-                        let direction = to_center / distance;
-                        // Pull strength proportional to how much of stone is inside
-                        let pull_strength = 0.5 * weighted_ratio;
-                        new_velocity += direction * pull_strength;
-                    } else {
+                    let [v0, v1, v2] = arrow_triangle_world_vertices(
+                        *tile_position,
+                        facing,
+                        speed_up_arrow_radius,
+                    );
+                    if point_in_triangle(stone_pos, v0, v1, v2) {
+                        // Inside the arrow triangle — launch in the facing direction
                         let direction = facing.to_vector();
                         new_velocity = direction * speed_up_factor;
+                    } else {
+                        // Outside the arrow but inside the hex — pull toward center
+                        let to_center = tile_position - stone_pos;
+                        let distance = to_center.length();
+                        if distance > 1e-10 {
+                            let direction = to_center / distance;
+                            let pull_strength = 0.5 * weighted_ratio;
+                            new_velocity += direction * pull_strength;
+                        }
                     }
                 }
             }

@@ -3,8 +3,8 @@ use bevy::prelude::*;
 use crate::{
     PausableSystems,
     gameplay::{GameState, StoneStopped},
-    level::OnLevel,
     level::CurrentLevel,
+    level::OnLevel,
     screens::Screen,
     tile::{CurrentDragTileType, TileType},
 };
@@ -255,6 +255,7 @@ fn tip_ui(current_level: &CurrentLevel) -> Option<Vec<impl Bundle>> {
         CurrentLevel::Level4 => level_4_tip_ui(),
         CurrentLevel::Level5 => level_5_tip_ui(),
         CurrentLevel::Level6 => vec![],
+        CurrentLevel::Level7 => vec![],
     };
     let mut bundles = Vec::new();
     for line in lines {
@@ -427,4 +428,3 @@ fn on_stone_stopped(
         commands.spawn(stone_stopped_ui());
     }
 }
-

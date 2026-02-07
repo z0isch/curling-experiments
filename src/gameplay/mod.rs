@@ -154,7 +154,12 @@ pub fn setup(
     commands.insert_resource(OnLevel(level.clone()));
 
     let grid = HexGrid::new(&level);
-    let tile_assets = TileAssets::new(&mut meshes, &mut materials, &grid);
+    let tile_assets = TileAssets::new(
+        &mut meshes,
+        &mut materials,
+        &grid,
+        level.speed_up_arrow_radius,
+    );
     commands.insert_resource(tile_assets);
     commands.insert_resource(CurrentDragTileType(TileType::MaintainSpeed));
     commands.set_state(GameState::Initial);
@@ -390,7 +395,12 @@ pub fn restart_game(
     }
 
     let grid = HexGrid::new(level);
-    let tile_assets = TileAssets::new(&mut meshes, &mut materials, &grid);
+    let tile_assets = TileAssets::new(
+        &mut meshes,
+        &mut materials,
+        &grid,
+        level.speed_up_arrow_radius,
+    );
     spawn_hex_grid(commands, &grid, &tile_assets, level, &mut scratch_materials);
     for stone_entity in stone_query {
         commands.entity(stone_entity).despawn();
@@ -457,6 +467,7 @@ fn draw_move_line(
         on_level.0.slow_down_factor,
         on_level.0.rotation_factor,
         on_level.0.speed_up_factor,
+        on_level.0.speed_up_arrow_radius,
     );
 
     for trajectory in trajectories {
@@ -546,6 +557,7 @@ fn simulate_trajectories(
     slow_down_factor: f32,
     rotation_factor: f32,
     speed_up_factor: f32,
+    speed_up_arrow_radius: f32,
 ) -> Vec<Vec<Vec2>> {
     const MIN_VELOCITY: f32 = 1.0; // Stop when velocity is very low
     const LINE_SEGMENT_SAMPLES: usize = 3;
@@ -607,6 +619,7 @@ fn simulate_trajectories(
                 slow_down_factor,
                 rotation_factor,
                 speed_up_factor,
+                speed_up_arrow_radius,
             )
             .velocity;
         }
