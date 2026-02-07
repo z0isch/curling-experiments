@@ -31,7 +31,7 @@ fn spawn_main_menu(mut commands: Commands) {
         ))
         .with_children(|parent| {
             parent.spawn((
-                Text::new("CURLING"),
+                Text::new("Broom Shakalaka"),
                 TextFont {
                     font_size: 100.0,
                     ..default()
